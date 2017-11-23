@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Common;
 using Common.Log;
 using Lykke.Ico.Core;
 using Lykke.Ico.Core.Queues.Transactions;
@@ -23,20 +24,7 @@ namespace Lykke.Job.IcoInvestment.AzureQueueHandlers
         [QueueTrigger(Consts.Transactions.Queues.BlockchainTransaction)]
         public async Task HandleBlockchainTransactionMessage(BlockchainTransactionMessage msg)
         {
-            try
-            {
-                await _blockchainTxService.Process(msg);
-            }
-            catch (Exception ex)
-            {
-                await _log.WriteErrorAsync(
-                    nameof(BlockchainTransactionQueueHandler), 
-                    nameof(HandleBlockchainTransactionMessage),
-                    JsonConvert.SerializeObject(msg),
-                    ex);
-
-                throw;
-            }
+            await _blockchainTxService.Process(msg);
         }
     }
 }   
