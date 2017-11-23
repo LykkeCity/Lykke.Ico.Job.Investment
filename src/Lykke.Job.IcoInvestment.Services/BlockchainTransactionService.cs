@@ -26,6 +26,8 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly ICampaignRepository _campaignRepository;
         private readonly ICryptoInvestmentRepository _cryptoInvestmentRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
+        private readonly string _component = nameof(BlockchainTransactionService);
+        private readonly string _process = nameof(Process);
 
         private readonly Dictionary<CurrencyType, string> _assetPairs = new Dictionary<CurrencyType, string>
         {
@@ -73,6 +75,9 @@ namespace Lykke.Job.IcoInvestment.Services
             if (string.IsNullOrWhiteSpace(investorEmail))
             {
                 // destination address is not a cash-in address of any ICO investor
+                // log short transaction info
+                var context = new { msg.CurrencyType, msg.TransactionId };
+                await _log.WriteInfoAsync(_component, _process, context.ToJson(), "Non-investment transaction rejected");
                 return;
             }
 
@@ -86,7 +91,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
             if (exchangeRate == 0M)
             {
-                throw new InvalidOperationException($"Exchange rate for [{msg.CurrencyType}] not found. Transaction [{msg.TransactionId}] skipped.");
+                throw new InvalidOperationException($"Exchange rate for [{msg.CurrencyType}] not found");
             }
 
             // save transaction info for investor 
@@ -115,12 +120,8 @@ namespace Lykke.Job.IcoInvestment.Services
             // increase the total ICO amount
             await _campaignRepository.IncreaseTotalRaisedAsync(usdAmount);
 
-            // log investment info
-            await _log.WriteInfoAsync(
-                nameof(BlockchainTransactionService),
-                nameof(Process),
-                msg.ToJson(),
-                "Investment processed");
+            // log full transaction info
+            await _log.WriteInfoAsync(_component, _process, msg.ToJson(), "Investment transaction processed");
         }
     }
 }
