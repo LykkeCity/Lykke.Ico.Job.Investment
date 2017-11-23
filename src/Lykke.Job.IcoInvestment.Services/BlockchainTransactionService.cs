@@ -40,10 +40,10 @@ namespace Lykke.Job.IcoInvestment.Services
         };
 
 
-        private readonly Dictionary<CurrencyType, string> _assetLinks = new Dictionary<CurrencyType, string>
+        private readonly Dictionary<CurrencyType, Func<string, string>> _assetLinks = new Dictionary<CurrencyType, Func<string, string>>
         {
-            { CurrencyType.Bitcoin, "https://blockchainexplorer.lykke.com/transaction" },
-            { CurrencyType.Ether, "ETH" }
+            { CurrencyType.Bitcoin, a => a.StartsWith("1") ? "https://blockchainexplorer.lykke.com/transaction" : "https://testnet.blockexplorer.com/tx" },
+            { CurrencyType.Ether, a => "https://etherscan.io/tx" }
         };
 
         public BlockchainTransactionService(
@@ -65,8 +65,8 @@ namespace Lykke.Job.IcoInvestment.Services
         public async Task Process(BlockchainTransactionMessage msg)
         {
             var investorAttributeType = msg.CurrencyType == CurrencyType.Bitcoin
-                ? InvestorAttributeType.BtcPublicKey 
-                : InvestorAttributeType.EthPublicKey;
+                ? InvestorAttributeType.PayInBtcAddress
+                : InvestorAttributeType.PayInEthAddress;
 
             var investorEmail = await _investorAttributeRepository.GetInvestorEmailAsync(investorAttributeType, msg.DestinationAddress);
 
@@ -101,8 +101,8 @@ namespace Lykke.Job.IcoInvestment.Services
                 usdAmount);
 
             var assetName = _assetNames[msg.CurrencyType];
-            var assetLink = _assetLinks[msg.CurrencyType];
-            var transactionHash = msg.TransactionId.Split("-").FirstOrDefault();
+            var assetLink = _assetLinks[msg.CurrencyType](msg.DestinationAddress);
+            var transactionHash = msg.TransactionId.Split("-").First();
 
             // send confirmation email
             await _investmentMailSender.SendAsync(new InvestorNewTransactionMessage
