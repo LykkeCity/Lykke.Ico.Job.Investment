@@ -80,7 +80,8 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));
 
             builder.RegisterType<BlockchainTransactionService>()
-                .As<IBlockchainTransactionService>();
+                .As<IBlockchainTransactionService>()
+                .SingleInstance();
 
             RegisterAzureQueueHandlers(builder);
 
