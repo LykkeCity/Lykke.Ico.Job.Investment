@@ -75,9 +75,6 @@ namespace Lykke.Job.IcoInvestment.Services
             if (string.IsNullOrWhiteSpace(investorEmail))
             {
                 // destination address is not a cash-in address of any ICO investor
-                // log short transaction info
-                var context = new { msg.CurrencyType, msg.TransactionId };
-                await _log.WriteInfoAsync(_component, _process, context.ToJson(), "Non-investment transaction rejected");
                 return;
             }
 
