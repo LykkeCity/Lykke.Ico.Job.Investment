@@ -9,12 +9,11 @@ using Lykke.Ico.Core;
 using Lykke.Ico.Core.Queues;
 using Lykke.Ico.Core.Queues.Emails;
 using Lykke.Ico.Core.Queues.Transactions;
-using Lykke.Ico.Core.Repositories.Campaign;
+using Lykke.Ico.Core.Repositories.CampaignInfo;
 using Lykke.Ico.Core.Repositories.CryptoInvestment;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Service.RateCalculator.Client;
-using Newtonsoft.Json;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
@@ -23,7 +22,7 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly ILog _log;
         private readonly IRateCalculatorClient _rateCalculatorClient;
         private readonly IInvestorAttributeRepository _investorAttributeRepository;
-        private readonly ICampaignRepository _campaignRepository;
+        private readonly ICampaignInfoRepository _campaignInfoRepository;
         private readonly ICryptoInvestmentRepository _cryptoInvestmentRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
         private readonly string _component = nameof(BlockchainTransactionService);
@@ -41,7 +40,6 @@ namespace Lykke.Job.IcoInvestment.Services
             { CurrencyType.Ether, "ETH" }
         };
 
-
         private readonly Dictionary<CurrencyType, Func<string, string>> _assetLinks = new Dictionary<CurrencyType, Func<string, string>>
         {
             { CurrencyType.Bitcoin, a => a.StartsWith("1") ? "https://blockchainexplorer.lykke.com/transaction" : "https://live.blockcypher.com/btc-testnet/tx" },
@@ -52,14 +50,14 @@ namespace Lykke.Job.IcoInvestment.Services
             ILog log,
             IRateCalculatorClient rateCalculatorClient, 
             IInvestorAttributeRepository investorAttributeRepository, 
-            ICampaignRepository campaignRepository, 
+            ICampaignInfoRepository campaignInfoRepository, 
             ICryptoInvestmentRepository cryptoInvestmentRepository,
             IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender)
         {
             _log = log;
             _rateCalculatorClient = rateCalculatorClient;
             _investorAttributeRepository = investorAttributeRepository;
-            _campaignRepository = campaignRepository;
+            _campaignInfoRepository = campaignInfoRepository;
             _cryptoInvestmentRepository = cryptoInvestmentRepository;
             _investmentMailSender = investmentMailSender;
         }
@@ -115,7 +113,7 @@ namespace Lykke.Job.IcoInvestment.Services
             });
 
             // increase the total ICO amount
-            await _campaignRepository.IncreaseTotalRaisedAsync(usdAmount);
+            await _campaignInfoRepository.IncrementValue(CampaignInfoType.AmountInvestedUsd, usdAmount);
 
             // log full transaction info
             await _log.WriteInfoAsync(_component, _process, msg.ToJson(), "Investment transaction processed");

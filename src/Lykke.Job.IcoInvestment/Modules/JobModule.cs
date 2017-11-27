@@ -3,7 +3,7 @@ using Autofac.Extensions.DependencyInjection;
 using Common.Log;
 using Lykke.Ico.Core.Queues;
 using Lykke.Ico.Core.Queues.Emails;
-using Lykke.Ico.Core.Repositories.Campaign;
+using Lykke.Ico.Core.Repositories.CampaignInfo;
 using Lykke.Ico.Core.Repositories.CryptoInvestment;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Job.IcoInvestment.Core.Services;
@@ -67,8 +67,8 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<IInvestorAttributeRepository>()
                 .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
 
-            builder.RegisterType<CampaignRepository>()
-                .As<ICampaignRepository>()
+            builder.RegisterType<CampaignInfoRepository>()
+                .As<ICampaignInfoRepository>()
                 .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
 
             builder.RegisterType<CryptoInvestmentRepository>()
