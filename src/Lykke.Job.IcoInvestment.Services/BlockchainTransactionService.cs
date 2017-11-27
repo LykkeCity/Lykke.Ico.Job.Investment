@@ -44,7 +44,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
         private readonly Dictionary<CurrencyType, Func<string, string>> _assetLinks = new Dictionary<CurrencyType, Func<string, string>>
         {
-            { CurrencyType.Bitcoin, a => a.StartsWith("1") ? "https://blockchainexplorer.lykke.com/transaction" : "https://testnet.blockexplorer.com/tx" },
+            { CurrencyType.Bitcoin, a => a.StartsWith("1") ? "https://blockchainexplorer.lykke.com/transaction" : "https://live.blockcypher.com/btc-testnet/tx" },
             { CurrencyType.Ether, a => "https://etherscan.io/tx" }
         };
 
