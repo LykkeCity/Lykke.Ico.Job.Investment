@@ -40,12 +40,6 @@ namespace Lykke.Job.IcoInvestment.Services
             { CurrencyType.Ether, "ETH" }
         };
 
-        private readonly Dictionary<CurrencyType, Func<string, string>> _assetLinks = new Dictionary<CurrencyType, Func<string, string>>
-        {
-            { CurrencyType.Bitcoin, a => a.StartsWith("1") ? "https://blockchainexplorer.lykke.com/transaction" : "https://live.blockcypher.com/btc-testnet/tx" },
-            { CurrencyType.Ether, a => "https://etherscan.io/tx" }
-        };
-
         public BlockchainTransactionService(
             ILog log,
             IRateCalculatorClient rateCalculatorClient, 
@@ -78,7 +72,6 @@ namespace Lykke.Job.IcoInvestment.Services
 
             Debug.Assert(_assetPairs.ContainsKey(msg.CurrencyType), $"Currency pair not defined for [{msg.CurrencyType}]");
             Debug.Assert(_assetNames.ContainsKey(msg.CurrencyType), $"Currency name not defined for [{msg.CurrencyType}]");
-            Debug.Assert(_assetLinks.ContainsKey(msg.CurrencyType), $"Explorer link not defined for [{msg.CurrencyType}]");
 
             // calc amounts
             var exchangeRate = Convert.ToDecimal(await _rateCalculatorClient.GetBestPriceAsync(_assetPairs[msg.CurrencyType], true));
@@ -100,16 +93,12 @@ namespace Lykke.Job.IcoInvestment.Services
                 exchangeRate,
                 usdAmount);
 
-            var assetName = _assetNames[msg.CurrencyType];
-            var assetLink = _assetLinks[msg.CurrencyType](msg.DestinationAddress);
-            var transactionHash = msg.TransactionId.Split("-").First();
-
             // send confirmation email
             await _investmentMailSender.SendAsync(new InvestorNewTransactionMessage
             {
                 EmailTo = investorEmail,
-                Payment = $"{msg.Amount} {assetName}",
-                TransactionLink = $"{assetLink}/{transactionHash}"
+                Payment = $"{msg.Amount} {_assetNames[msg.CurrencyType]}",
+                TransactionLink = msg.Link
             });
 
             // increase the total ICO amount
