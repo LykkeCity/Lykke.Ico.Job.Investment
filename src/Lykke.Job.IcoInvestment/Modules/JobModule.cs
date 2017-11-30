@@ -8,6 +8,7 @@ using Lykke.Ico.Core.Repositories.CryptoInvestment;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
+using Lykke.Job.IcoInvestment.PeriodicalHandlers;
 using Lykke.Job.IcoInvestment.Services;
 using Lykke.JobTriggers.Extenstions;
 using Lykke.Service.RateCalculator.Client;
@@ -85,6 +86,8 @@ namespace Lykke.Job.IcoInvestment.Modules
 
             RegisterAzureQueueHandlers(builder);
 
+            RegisterPeriodicalHandlers(builder);
+
             // TODO: Add your dependencies here
 
             builder.Populate(_services);
@@ -101,6 +104,16 @@ namespace Lykke.Job.IcoInvestment.Modules
                 {
                     pool.AddDefaultConnection(_settings.AzureQueue.ConnectionString);
                 });
+        }
+
+        private void RegisterPeriodicalHandlers(ContainerBuilder builder)
+        {
+            // TODO: You should register each periodical handler in DI container as IStartable singleton and autoactivate it
+
+            builder.RegisterType<FlushHandler>()
+                .As<IStartable>()
+                .AutoActivate()
+                .SingleInstance();
         }
 
     }

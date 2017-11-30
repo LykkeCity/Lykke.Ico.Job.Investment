@@ -27,6 +27,8 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
         private readonly string _component = nameof(BlockchainTransactionService);
         private readonly string _process = nameof(Process);
+        private volatile uint _processedTotal = 0;
+        private volatile uint _processedInvestments = 0;
 
         private readonly Dictionary<CurrencyType, string> _assetPairs = new Dictionary<CurrencyType, string>
         {
@@ -67,6 +69,7 @@ namespace Lykke.Job.IcoInvestment.Services
             if (string.IsNullOrWhiteSpace(investorEmail))
             {
                 // destination address is not a cash-in address of any ICO investor
+                _processedTotal++;
                 return;
             }
 
@@ -106,6 +109,22 @@ namespace Lykke.Job.IcoInvestment.Services
 
             // log full transaction info
             await _log.WriteInfoAsync(_component, _process, msg.ToJson(), "Investment transaction processed");
+
+            _processedTotal++;
+            _processedInvestments++;
+        }
+
+        public async Task FlushProcessInfo()
+        {
+            if (_processedTotal > 0 || 
+                _processedInvestments > 0)
+            {
+                await _log.WriteInfoAsync(_component, _process, string.Empty,
+                    $"{_processedTotal} transaction(s) processed; {_processedInvestments} investments processed");
+
+                _processedTotal = 0;
+                _processedInvestments = 0;
+            }
         }
     }
 }
