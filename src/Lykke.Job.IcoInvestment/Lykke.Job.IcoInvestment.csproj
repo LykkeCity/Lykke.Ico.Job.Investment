@@ -21,7 +21,7 @@
   <ItemGroup>
     <PackageReference Include="Lykke.Common" Version="3.0.2" />
     <PackageReference Include="Lykke.Common.ApiLibrary" Version="1.0.16" />
-    <PackageReference Include="Lykke.Ico.Core" Version="1.0.56" />
+    <PackageReference Include="Lykke.Ico.Core" Version="1.0.59" />
     <!-- #if azurequeuesub -->
     <PackageReference Include="Lykke.JobTriggers" Version="1.1.19" />
     <!-- #endif -->

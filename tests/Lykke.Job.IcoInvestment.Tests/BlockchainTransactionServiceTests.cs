@@ -8,6 +8,7 @@ using Lykke.Ico.Core.Queues.Transactions;
 using Lykke.Ico.Core.Repositories.CampaignInfo;
 using Lykke.Ico.Core.Repositories.CryptoInvestment;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
+using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
 using Lykke.Job.IcoInvestment.Services;
 using Lykke.Service.RateCalculator.Client;
 using Moq;
@@ -23,11 +24,20 @@ namespace Lykke.Job.IcoInvestment.Tests
         private Mock<ICampaignInfoRepository> _campaignInfoRepository;
         private Mock<ICryptoInvestmentRepository> _cryptoInvestmentRepository;
         private Mock<IQueuePublisher<InvestorNewTransactionMessage>> _investmentMailSender;
+        private Mock<IQueuePublisher<InvestorKycRequestMessage>> _kycMailSender;
+        private IcoSettings _icoSettings;
         private decimal _usdAmount = decimal.Zero;
 
         private BlockchainTransactionService Init(string investorEmail = "test@test.test", double exchangeRate = 1.0)
         {
             _log = new LogToMemory();
+            _icoSettings = new IcoSettings
+            {
+                CampaignStartDateTime = DateTimeOffset.Now,
+                KycUsdThreshold = decimal.MaxValue,
+                TokenPrice = decimal.One
+            };
+
             _campaignInfoRepository = new Mock<ICampaignInfoRepository>();
 
             _campaignInfoRepository
@@ -52,16 +62,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             _cryptoInvestmentRepository = new Mock<ICryptoInvestmentRepository>();
 
             _cryptoInvestmentRepository
-                .Setup(m => m.SaveAsync(
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    It.IsAny<DateTimeOffset>(),
-                    It.IsAny<string>(),
-                    It.IsAny<CurrencyType>(),
-                    It.IsAny<decimal>(),
-                    It.IsAny<decimal>(),
-                    It.IsAny<decimal>()))
+                .Setup(m => m.SaveAsync(It.IsAny<ICryptoInvestment>()))
                 .Returns(() => Task.CompletedTask);
 
             _investmentMailSender = new Mock<IQueuePublisher<InvestorNewTransactionMessage>>();
@@ -70,13 +71,21 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Setup(m => m.SendAsync(It.IsAny<InvestorNewTransactionMessage>()))
                 .Returns(() => Task.CompletedTask);
 
+            _kycMailSender = new Mock<IQueuePublisher<InvestorKycRequestMessage>>();
+
+            _kycMailSender
+                .Setup(m => m.SendAsync(It.IsAny<InvestorKycRequestMessage>()))
+                .Returns(() => Task.CompletedTask);
+
             return new BlockchainTransactionService(
                 _log,
                 _rateCalculatorClient.Object,
                 _investorAttributeRepository.Object,
                 _campaignInfoRepository.Object,
                 _cryptoInvestmentRepository.Object,
-                _investmentMailSender.Object);
+                _investmentMailSender.Object,
+                _kycMailSender.Object,
+                _icoSettings);
         }
 
         [Fact]
@@ -154,16 +163,7 @@ namespace Lykke.Job.IcoInvestment.Tests
 
             // History not saved
             _cryptoInvestmentRepository.Verify(
-                m => m.SaveAsync(
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    It.IsAny<string>(),
-                    It.IsAny<DateTimeOffset>(),
-                    It.IsAny<string>(),
-                    It.IsAny<CurrencyType>(),
-                    It.IsAny<decimal>(),
-                    It.IsAny<decimal>(),
-                    It.IsAny<decimal>()), 
+                m => m.SaveAsync(It.IsAny<ICryptoInvestment>()), 
                 Times.Never);
 
             // Email not sent
