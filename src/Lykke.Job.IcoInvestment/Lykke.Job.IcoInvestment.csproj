@@ -20,8 +20,8 @@
 
   <ItemGroup>
     <PackageReference Include="Lykke.Common" Version="3.0.2" />
-    <PackageReference Include="Lykke.Common.ApiLibrary" Version="1.0.16" />
-    <PackageReference Include="Lykke.Ico.Core" Version="1.0.59" />
+    <PackageReference Include="Lykke.Common.ApiLibrary" Version="1.0.18" />
+    <PackageReference Include="Lykke.Ico.Core" Version="1.0.65" />
     <!-- #if azurequeuesub -->
     <PackageReference Include="Lykke.JobTriggers" Version="1.1.19" />
     <!-- #endif -->
@@ -31,6 +31,7 @@
     <!-- #endif -->
     <!-- #if rabbitpub || rabbitsub -->
     <PackageReference Include="Lykke.RabbitMqBroker" Version="4.2.0" />
+    <PackageReference Include="Lykke.Service.IcoExRate.Client" Version="1.0.5-beta" />
     <!-- #endif -->
     <PackageReference Include="Lykke.SettingsReader" Version="1.0.43" />
     <PackageReference Include="Lykke.SlackNotification.AzureQueue" Version="1.0.7" />

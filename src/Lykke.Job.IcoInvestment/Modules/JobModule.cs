@@ -5,13 +5,15 @@ using Lykke.Ico.Core.Queues;
 using Lykke.Ico.Core.Queues.Emails;
 using Lykke.Ico.Core.Repositories.CampaignInfo;
 using Lykke.Ico.Core.Repositories.CryptoInvestment;
+using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
+using Lykke.Job.IcoInvestment.Core.Domain.Transactions;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
 using Lykke.Job.IcoInvestment.PeriodicalHandlers;
 using Lykke.Job.IcoInvestment.Services;
 using Lykke.JobTriggers.Extenstions;
-using Lykke.Service.RateCalculator.Client;
+using Lykke.Service.IcoExRate.Client;
 using Lykke.SettingsReader;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -62,7 +64,11 @@ namespace Lykke.Job.IcoInvestment.Modules
             builder.RegisterType<ShutdownManager>()
                 .As<IShutdownManager>();
 
-            builder.RegisterRateCalculatorClient(_settings.RateCalculatorServiceApiUrl, _log);
+            builder.RegisterIcoExRateClient(_settings.IcoExRateServiceUrl, _log);
+
+            builder.RegisterType<InvestorRepository>()
+               .As<IInvestorRepository>()
+               .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
 
             builder.RegisterType<InvestorAttributeRepository>()
                 .As<IInvestorAttributeRepository>()
@@ -80,8 +86,22 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<IQueuePublisher<InvestorNewTransactionMessage>>()
                 .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));
 
+            builder.RegisterType<QueuePublisher<InvestorKycRequestMessage>>()
+                .As<IQueuePublisher<InvestorKycRequestMessage>>()
+                .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));
+
+            builder.RegisterType<QueuePublisher<ProcessedTransactionMessage>>()
+                .As<IQueuePublisher<ProcessedTransactionMessage>>()
+                .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));
+
             builder.RegisterType<BlockchainTransactionService>()
                 .As<IBlockchainTransactionService>()
+                .WithParameter(TypedParameter.From(_settings.Ico))
+                .SingleInstance();
+
+            builder.RegisterType<ProcessedTransactionService>()
+                .As<IProcessedTransactionService>()
+                .WithParameter(TypedParameter.From(_settings.Ico))
                 .SingleInstance();
 
             RegisterAzureQueueHandlers(builder);
@@ -115,6 +135,5 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .AutoActivate()
                 .SingleInstance();
         }
-
     }
 }

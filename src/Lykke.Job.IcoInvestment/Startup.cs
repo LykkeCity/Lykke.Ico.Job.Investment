@@ -4,6 +4,8 @@ using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using AzureStorage.Tables;
 using Common.Log;
+using Lykke.AzureStorage.Tables.Entity.Metamodel;
+using Lykke.AzureStorage.Tables.Entity.Metamodel.Providers;
 using Lykke.Common.ApiLibrary.Middleware;
 using Lykke.Common.ApiLibrary.Swagger;
 using Lykke.Job.IcoInvestment.Core.Services;
@@ -56,6 +58,8 @@ namespace Lykke.Job.IcoInvestment
                 {
                     options.DefaultLykkeConfiguration("v1", "IcoInvestment API");
                 });
+
+                EntityMetamodel.Configure(new AnnotationsBasedMetamodelProvider());
 
                 var builder = new ContainerBuilder();
                 var appSettings = Configuration.LoadSettings<AppSettings>();

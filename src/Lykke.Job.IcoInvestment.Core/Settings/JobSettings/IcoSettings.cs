@@ -6,8 +6,8 @@ namespace Lykke.Job.IcoInvestment.Core.Settings.JobSettings
 {
     public class IcoSettings
     {
-        public Decimal KycUsdThreshold { get; set; }
-        public DateTimeOffset CampaignStartDateTime { get; set; }
-        public Decimal TokenPrice { get; set; }
+        public Decimal KycThreshold { get; set; }
+        public DateTime CampaignStartDateTime { get; set; }
+        public Decimal BasePrice { get; set; }
     }
 }
