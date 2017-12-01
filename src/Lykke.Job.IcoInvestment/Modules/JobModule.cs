@@ -7,10 +7,8 @@ using Lykke.Ico.Core.Repositories.CampaignInfo;
 using Lykke.Ico.Core.Repositories.CryptoInvestment;
 using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
-using Lykke.Job.IcoInvestment.Core.Domain.Transactions;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
-using Lykke.Job.IcoInvestment.PeriodicalHandlers;
 using Lykke.Job.IcoInvestment.Services;
 using Lykke.JobTriggers.Extenstions;
 using Lykke.Service.IcoExRate.Client;
@@ -90,23 +88,12 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<IQueuePublisher<InvestorKycRequestMessage>>()
                 .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));
 
-            builder.RegisterType<QueuePublisher<ProcessedTransactionMessage>>()
-                .As<IQueuePublisher<ProcessedTransactionMessage>>()
-                .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));
-
             builder.RegisterType<BlockchainTransactionService>()
                 .As<IBlockchainTransactionService>()
                 .WithParameter(TypedParameter.From(_settings.Ico))
                 .SingleInstance();
 
-            builder.RegisterType<ProcessedTransactionService>()
-                .As<IProcessedTransactionService>()
-                .WithParameter(TypedParameter.From(_settings.Ico))
-                .SingleInstance();
-
             RegisterAzureQueueHandlers(builder);
-
-            RegisterPeriodicalHandlers(builder);
 
             // TODO: Add your dependencies here
 
@@ -124,16 +111,6 @@ namespace Lykke.Job.IcoInvestment.Modules
                 {
                     pool.AddDefaultConnection(_settings.AzureQueue.ConnectionString);
                 });
-        }
-
-        private void RegisterPeriodicalHandlers(ContainerBuilder builder)
-        {
-            // TODO: You should register each periodical handler in DI container as IStartable singleton and autoactivate it
-
-            builder.RegisterType<FlushHandler>()
-                .As<IStartable>()
-                .AutoActivate()
-                .SingleInstance();
         }
     }
 }

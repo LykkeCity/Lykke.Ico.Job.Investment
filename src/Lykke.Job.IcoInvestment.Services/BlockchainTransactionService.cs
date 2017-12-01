@@ -1,18 +1,17 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.Net;
 using System.Threading.Tasks;
 using Common;
 using Common.Log;
 using Lykke.Ico.Core;
 using Lykke.Ico.Core.Queues;
+using Lykke.Ico.Core.Queues.Emails;
 using Lykke.Ico.Core.Queues.Transactions;
 using Lykke.Ico.Core.Repositories.CampaignInfo;
 using Lykke.Ico.Core.Repositories.CryptoInvestment;
+using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments;
-using Lykke.Job.IcoInvestment.Core.Domain.Transactions;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
 using Lykke.Service.IcoExRate.Client;
@@ -28,18 +27,12 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IInvestorAttributeRepository _investorAttributeRepository;
         private readonly ICampaignInfoRepository _campaignInfoRepository;
         private readonly ICryptoInvestmentRepository _cryptoInvestmentRepository;
-        private readonly IQueuePublisher<ProcessedTransactionMessage> _processedTxSender;
+        private readonly IInvestorRepository _investorRepository;
+        private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
+        private readonly IQueuePublisher<InvestorKycRequestMessage> _kycMailSender;
         private readonly IcoSettings _icoSettings;
         private readonly string _component = nameof(BlockchainTransactionService);
         private readonly string _process = nameof(Process);
-        private volatile uint _processedTotal = 0;
-        private volatile uint _processedInvestments = 0;
-
-        private readonly Dictionary<CurrencyType, Pair> _assetPairs = new Dictionary<CurrencyType, Pair>
-        {
-            { CurrencyType.Bitcoin, Pair.BTCUSD },
-            { CurrencyType.Ether, Pair.ETHUSD }
-        };
 
         public BlockchainTransactionService(
             ILog log,
@@ -47,7 +40,9 @@ namespace Lykke.Job.IcoInvestment.Services
             IInvestorAttributeRepository investorAttributeRepository, 
             ICampaignInfoRepository campaignInfoRepository, 
             ICryptoInvestmentRepository cryptoInvestmentRepository,
-            IQueuePublisher<ProcessedTransactionMessage> processedTxSender,
+            IInvestorRepository investorRepository,
+            IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender,
+            IQueuePublisher<InvestorKycRequestMessage> kycMailSender,
             IcoSettings icoSettings)
         {
             _log = log;
@@ -55,24 +50,28 @@ namespace Lykke.Job.IcoInvestment.Services
             _investorAttributeRepository = investorAttributeRepository;
             _campaignInfoRepository = campaignInfoRepository;
             _cryptoInvestmentRepository = cryptoInvestmentRepository;
-            _processedTxSender = processedTxSender;
+            _investorRepository = investorRepository;
+            _investmentMailSender = investmentMailSender;
+            _kycMailSender = kycMailSender;
             _icoSettings = icoSettings;
         }
 
         public async Task Process(BlockchainTransactionMessage msg)
         {
-            Debug.Assert(_assetPairs.ContainsKey(msg.CurrencyType), $"Currency pair not defined for [{msg.CurrencyType}]");
-
-            var investorAttributeType = msg.CurrencyType == CurrencyType.Bitcoin
-                ? InvestorAttributeType.PayInBtcAddress
-                : InvestorAttributeType.PayInEthAddress;
-
-            var investorEmail = await _investorAttributeRepository.GetInvestorEmailAsync(investorAttributeType, msg.DestinationAddress);
-
-            if (string.IsNullOrWhiteSpace(investorEmail))
+            if (string.IsNullOrWhiteSpace(msg.InvestorEmail))
             {
-                // destination address is not a cash-in address of any ICO investor
-                _processedTotal++;
+                // if investor is not specified try to find her by address
+                var investorAttributeType = msg.CurrencyType == CurrencyType.Bitcoin
+                    ? InvestorAttributeType.PayInBtcAddress
+                    : InvestorAttributeType.PayInEthAddress;
+
+                msg.InvestorEmail = await _investorAttributeRepository.GetInvestorEmailAsync(investorAttributeType, msg.DestinationAddress);
+            }
+
+            if (string.IsNullOrWhiteSpace(msg.InvestorEmail))
+            {
+                // if investor still not found then it means that destination address
+                // is not a cash-in address of any ICO investor
                 return;
             }
 
@@ -81,22 +80,15 @@ namespace Lykke.Job.IcoInvestment.Services
             if (timeSpan < TimeSpan.Zero ||
                 timeSpan > TimeSpan.FromDays(21))
             {
-                // investment is out of period of sale
-                await _log.WriteWarningAsync(_component, _process, msg.ToJson(), "Investment is out of crowd-sale terms");
-                _processedTotal++;
-                _processedInvestments++;
-                return;
+                throw new InvalidOperationException($"Investment {msg.ToJson()} is out of crowd-sale terms");
             }
 
-            var exchangeRate = await GetExchangeRate(_assetPairs[msg.CurrencyType], msg.BlockTimestamp) ?? new AverageRateResponse { AverageRate = 6000.0, Rates = new List<RateResponse>() };
+            var exchangeRate = await GetExchangeRate(msg.CurrencyType == CurrencyType.Bitcoin ? Pair.BTCUSD : Pair.ETHUSD, msg.BlockTimestamp);
 
-            if (exchangeRate == null || 
+            if (exchangeRate == null ||
                 exchangeRate.AverageRate == null)
             {
-                await _log.WriteWarningAsync(_component, _process, msg.ToJson(), "Exchange rate not found");
-                _processedTotal++;
-                _processedInvestments++;
-                return;
+                throw new InvalidOperationException($"Exchange rate not found for investment {msg.ToJson()}");
             }
 
             var totalVld = 0M;
@@ -110,9 +102,11 @@ namespace Lykke.Job.IcoInvestment.Services
             var price = GetPrice(totalVld, msg.BlockTimestamp);
             var amountUsd = msg.Amount * avgExchangeRate;
             var amountVld = DecimalExtensions.RoundDown(amountUsd / price, 4); // round down to 4 decimal places
-            var cryptoInvestment = new CryptoInvestment
+
+            // save transaction info for investor 
+            await _cryptoInvestmentRepository.SaveAsync(new CryptoInvestment
             {
-                InvestorEmail = investorEmail,
+                InvestorEmail = msg.InvestorEmail,
                 BlockId = msg.BlockId,
                 BlockTimestamp = msg.BlockTimestamp.UtcDateTime,
                 CurrencyType = msg.CurrencyType,
@@ -124,33 +118,73 @@ namespace Lykke.Job.IcoInvestment.Services
                 Price = price,
                 AmountVld = amountVld,
                 Context = exchangeRate.Rates.ToJson()
-            };
-
-            // save transaction info for investor 
-            await _cryptoInvestmentRepository.SaveAsync(cryptoInvestment);
-
-            // increase the total ICO amounts
-            // TODO: add cache for total amounts to prevent double-incrementing:
-            // - read all transactions on start
-            // - calc total amounts
-            // - keep amounts in actual state
-            // - re-write amounts instead of incrementing
-            // - dedicated thread-safe cache-service to be able to use it from different places 
-            await _campaignInfoRepository.IncrementValue(CampaignInfoType.AmountInvestedVld, amountVld);
-            await _campaignInfoRepository.IncrementValue(CampaignInfoType.AmountInvestedUsd, amountUsd);
-            await _campaignInfoRepository.IncrementValue(msg.CurrencyType == CurrencyType.Bitcoin ? CampaignInfoType.AmountInvestedBtc : CampaignInfoType.AmountInvestedBtc, msg.Amount);
-
-            // queue transaction for sending confirmation emails and processing KYC
-            await _processedTxSender.SendAsync(ProcessedTransactionMessage.Create(investorEmail, msg.TransactionId, msg.Link));
+            });
 
             // log full transaction info
             await _log.WriteInfoAsync(_component, _process, msg.ToJson(), "Investment processed");
 
-            _processedTotal++;
-            _processedInvestments++;
+            await SendConfirmationEmail(msg);
+
+            await UpdateCampaignDetails(msg, amountUsd, amountVld);
+
+            await UpdateInvestorDetails(msg, amountUsd, amountVld);
         }
 
-        public async Task<AverageRateResponse> GetExchangeRate(Pair assetPair, DateTimeOffset blockTimestamp)
+        private async Task SendConfirmationEmail(BlockchainTransactionMessage msg)
+        {
+            var asset = msg.CurrencyType == CurrencyType.Bitcoin ? "BTC" : "ETH";
+            var email = new InvestorNewTransactionMessage
+            {
+                EmailTo = msg.InvestorEmail,
+                Payment = $"{msg.Amount} {asset}",
+                TransactionLink = msg.Link
+            };
+
+            await _investmentMailSender.SendAsync(email);
+
+            await _log.WriteInfoAsync(_component, _process, email.ToJson(),
+                $"Investment confirmation sent to {msg.InvestorEmail}");
+        }
+
+        private async Task UpdateCampaignDetails(BlockchainTransactionMessage msg, decimal amountUsd, decimal amountVld)
+        {
+            // increase the total ICO amounts
+            await _campaignInfoRepository.IncrementValue(CampaignInfoType.AmountInvestedVld, amountVld);
+            await _campaignInfoRepository.IncrementValue(CampaignInfoType.AmountInvestedUsd, amountUsd);
+            await _campaignInfoRepository.IncrementValue(msg.CurrencyType == CurrencyType.Bitcoin ? CampaignInfoType.AmountInvestedBtc : CampaignInfoType.AmountInvestedBtc, msg.Amount);
+        }
+
+        private async Task UpdateInvestorDetails(BlockchainTransactionMessage msg, decimal amountUsd, decimal amountVld)
+        {
+            var investor = await _investorRepository.GetAsync(msg.InvestorEmail);
+
+            if (msg.CurrencyType == CurrencyType.Bitcoin)
+            {
+                investor.AmountBtc += msg.Amount;
+            }
+            else
+            {
+                investor.AmountEth += msg.Amount;
+            }
+
+            investor.AmountUsd += amountUsd;
+            investor.AmountVld += amountVld;
+
+            if (investor.AmountUsd >= _icoSettings.KycThreshold && string.IsNullOrEmpty(investor.KycProcessId))
+            {
+                // TODO: get actual KYC identitfier from provider
+                investor.KycProcessId = Guid.NewGuid().ToString();
+
+                await _kycMailSender.SendAsync(InvestorKycRequestMessage.Create(investor.Email, investor.KycProcessId));
+
+                await _log.WriteInfoAsync(_component, _process, investor.KycProcessId,
+                    $"KYC requested for {investor.Email}");
+            }
+
+            await _investorRepository.UpdateAsync(investor);
+        }
+
+        private async Task<AverageRateResponse> GetExchangeRate(Pair assetPair, DateTimeOffset blockTimestamp)
         {
             try
             {
@@ -165,20 +199,7 @@ namespace Lykke.Job.IcoInvestment.Services
             }
         }
 
-        public async Task FlushProcessInfo()
-        {
-            if (_processedTotal > 0 || 
-                _processedInvestments > 0)
-            {
-                await _log.WriteInfoAsync(_component, _process, string.Empty,
-                    $"{_processedTotal} transaction(s) processed; {_processedInvestments} investments processed");
-
-                _processedTotal = 0;
-                _processedInvestments = 0;
-            }
-        }
-
-        public decimal GetPrice(decimal currentTotal, DateTimeOffset blockTimestamp)
+        private decimal GetPrice(decimal currentTotal, DateTimeOffset blockTimestamp)
         {
             if (currentTotal < 20000000)
             {

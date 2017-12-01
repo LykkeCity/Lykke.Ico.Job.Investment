@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 using Lykke.Ico.Core;
 using Lykke.Ico.Core.Repositories.CryptoInvestment;
 

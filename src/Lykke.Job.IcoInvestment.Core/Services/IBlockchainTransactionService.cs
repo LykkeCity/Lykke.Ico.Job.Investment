@@ -6,6 +6,5 @@ namespace Lykke.Job.IcoInvestment.Core.Services
     public interface IBlockchainTransactionService
     {
         Task Process(BlockchainTransactionMessage message);
-        Task FlushProcessInfo();
     }
 }
