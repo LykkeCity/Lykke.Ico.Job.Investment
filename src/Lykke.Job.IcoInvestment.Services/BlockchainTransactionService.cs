@@ -109,7 +109,7 @@ namespace Lykke.Job.IcoInvestment.Services
             var avgExchangeRate = Convert.ToDecimal(exchangeRate.AverageRate);
             var price = GetPrice(totalVld, msg.BlockTimestamp);
             var amountUsd = msg.Amount * avgExchangeRate;
-            var amountVld = decimal.Round(amountUsd / price, 4, MidpointRounding.AwayFromZero);
+            var amountVld = DecimalExtensions.RoundDown(amountUsd / price, 4); // round down to 4 decimal places
             var cryptoInvestment = new CryptoInvestment
             {
                 InvestorEmail = investorEmail,
