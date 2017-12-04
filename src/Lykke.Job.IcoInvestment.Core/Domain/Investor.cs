@@ -45,6 +45,6 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
 
         public decimal AmountUsd { get; set; }
 
-        public decimal AmountVld { get; set; }
+        public decimal AmountToken { get; set; }
     }
 }

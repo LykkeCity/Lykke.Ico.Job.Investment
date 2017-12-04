@@ -8,7 +8,6 @@ using Lykke.Ico.Core.Queues;
 using Lykke.Ico.Core.Queues.Emails;
 using Lykke.Ico.Core.Queues.Transactions;
 using Lykke.Ico.Core.Repositories.CampaignInfo;
-using Lykke.Ico.Core.Repositories.CryptoInvestment;
 using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments;
@@ -17,6 +16,7 @@ using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
 using Lykke.Service.IcoExRate.Client;
 using Lykke.Service.IcoExRate.Client.AutorestClient.Models;
 using Microsoft.Rest;
+using Lykke.Ico.Core.Repositories.InvestorTransaction;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
@@ -100,7 +100,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
         private async Task<InvestorTransaction> SaveTransaction(BlockchainTransactionMessage msg, AverageRateResponse exchangeRate)
         {
-            var totalVldStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedVld);
+            var totalVldStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedToken);
             if (!decimal.TryParse(totalVldStr, out var totalVld))
             {
                 totalVld = 0M;
@@ -188,7 +188,7 @@ namespace Lykke.Job.IcoInvestment.Services
                 await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedEth, tx.Amount);
             }
 
-            await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedVld, tx.AmountToken);
+            await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedToken, tx.AmountToken);
             await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedUsd, tx.AmountUsd);
         }
 
@@ -209,19 +209,12 @@ namespace Lykke.Job.IcoInvestment.Services
         {
             try
             {
-                if (tx.Currency == CurrencyType.Bitcoin)
-                {
-                    await _investorRepository.IncrementBtc(tx.Email, tx.Amount, tx.AmountUsd, tx.AmountToken);
-                }
-                if (tx.Currency == CurrencyType.Ether)
-                {
-                    await _investorRepository.IncrementEth(tx.Email, tx.Amount, tx.AmountUsd, tx.AmountToken);
-                }
+                await _investorRepository.IncrementAmount(tx.Email, tx.Currency, tx.Amount, tx.AmountUsd, tx.AmountToken);
             }
             catch (Exception ex)
             {
                 await _log.WriteErrorAsync(_component, nameof(UpdateInvestorAmounts),
-                    $"Failed to update investor amounts: email={tx.ToJson()}", ex);
+                    $"Failed to update investor amount: email={tx.ToJson()}", ex);
             }
         }
 

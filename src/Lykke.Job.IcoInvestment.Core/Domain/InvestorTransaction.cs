@@ -1,6 +1,6 @@
 ﻿using System;
 using Lykke.Ico.Core;
-using Lykke.Ico.Core.Repositories.CryptoInvestment;
+using Lykke.Ico.Core.Repositories.InvestorTransaction;
 
 namespace Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments
 {

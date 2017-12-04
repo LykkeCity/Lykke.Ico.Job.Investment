@@ -6,7 +6,6 @@ using Lykke.Ico.Core.Queues;
 using Lykke.Ico.Core.Queues.Emails;
 using Lykke.Ico.Core.Queues.Transactions;
 using Lykke.Ico.Core.Repositories.CampaignInfo;
-using Lykke.Ico.Core.Repositories.CryptoInvestment;
 using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
@@ -17,6 +16,7 @@ using Moq;
 using Xunit;
 using Lykke.Job.IcoInvestment.Core.Domain;
 using Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments;
+using Lykke.Ico.Core.Repositories.InvestorTransaction;
 
 namespace Lykke.Job.IcoInvestment.Tests
 {
