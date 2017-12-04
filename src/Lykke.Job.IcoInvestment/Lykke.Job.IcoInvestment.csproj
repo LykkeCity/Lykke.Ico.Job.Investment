@@ -21,7 +21,6 @@
   <ItemGroup>
     <PackageReference Include="Lykke.Common" Version="3.0.2" />
     <PackageReference Include="Lykke.Common.ApiLibrary" Version="1.0.18" />
-    <PackageReference Include="Lykke.Ico.Core" Version="1.0.67" />
     <!-- #if azurequeuesub -->
     <PackageReference Include="Lykke.JobTriggers" Version="1.1.19" />
     <!-- #endif -->
@@ -48,7 +47,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Lykke.Job.IcoInvestment.AzureRepositories\Lykke.Job.IcoInvestment.AzureRepositories.csproj" />
     <ProjectReference Include="..\Lykke.Job.IcoInvestment.Core\Lykke.Job.IcoInvestment.Core.csproj" />
     <ProjectReference Include="..\Lykke.Job.IcoInvestment.Services\Lykke.Job.IcoInvestment.Services.csproj" />
   </ItemGroup>

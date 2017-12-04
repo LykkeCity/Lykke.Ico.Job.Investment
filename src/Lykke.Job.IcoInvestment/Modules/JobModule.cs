@@ -76,8 +76,8 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<ICampaignInfoRepository>()
                 .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
 
-            builder.RegisterType<CryptoInvestmentRepository>()
-                .As<ICryptoInvestmentRepository>()
+            builder.RegisterType<InvestorTransactionRepository>()
+                .As<IInvestorTransactionRepository>()
                 .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
 
             builder.RegisterType<QueuePublisher<InvestorNewTransactionMessage>>()

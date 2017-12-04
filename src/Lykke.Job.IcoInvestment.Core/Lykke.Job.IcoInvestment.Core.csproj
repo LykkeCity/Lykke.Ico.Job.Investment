@@ -7,11 +7,7 @@
 
   <ItemGroup>
     <PackageReference Include="Lykke.Common" Version="3.0.2" />
-    <PackageReference Include="Lykke.Ico.Core" Version="1.0.67" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\contract\Lykke.Job.IcoInvestment.Contract\Lykke.Job.IcoInvestment.Contract.csproj" />
+    <PackageReference Include="Lykke.Ico.Core" Version="1.0.73" />
   </ItemGroup>
 
 </Project>

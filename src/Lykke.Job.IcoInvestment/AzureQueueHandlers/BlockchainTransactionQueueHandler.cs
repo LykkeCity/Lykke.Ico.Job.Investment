@@ -1,12 +1,9 @@
-﻿using System;
-using System.Threading.Tasks;
-using Common;
+﻿using System.Threading.Tasks;
 using Common.Log;
 using Lykke.Ico.Core;
 using Lykke.Ico.Core.Queues.Transactions;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.JobTriggers.Triggers.Attributes;
-using Newtonsoft.Json;
 
 namespace Lykke.Job.IcoInvestment.AzureQueueHandlers
 {

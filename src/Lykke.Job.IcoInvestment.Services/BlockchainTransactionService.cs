@@ -26,7 +26,7 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IIcoExRateClient _exRateClient;
         private readonly IInvestorAttributeRepository _investorAttributeRepository;
         private readonly ICampaignInfoRepository _campaignInfoRepository;
-        private readonly ICryptoInvestmentRepository _cryptoInvestmentRepository;
+        private readonly IInvestorTransactionRepository _investorTransactionRepository;
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
         private readonly IQueuePublisher<InvestorKycRequestMessage> _kycMailSender;
@@ -38,8 +38,8 @@ namespace Lykke.Job.IcoInvestment.Services
             ILog log,
             IIcoExRateClient exRateClient, 
             IInvestorAttributeRepository investorAttributeRepository, 
-            ICampaignInfoRepository campaignInfoRepository, 
-            ICryptoInvestmentRepository cryptoInvestmentRepository,
+            ICampaignInfoRepository campaignInfoRepository,
+            IInvestorTransactionRepository investorTransactionRepository,
             IInvestorRepository investorRepository,
             IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender,
             IQueuePublisher<InvestorKycRequestMessage> kycMailSender,
@@ -49,7 +49,7 @@ namespace Lykke.Job.IcoInvestment.Services
             _exRateClient = exRateClient;
             _investorAttributeRepository = investorAttributeRepository;
             _campaignInfoRepository = campaignInfoRepository;
-            _cryptoInvestmentRepository = cryptoInvestmentRepository;
+            _investorTransactionRepository = investorTransactionRepository;
             _investorRepository = investorRepository;
             _investmentMailSender = investmentMailSender;
             _kycMailSender = kycMailSender;
@@ -58,148 +58,201 @@ namespace Lykke.Job.IcoInvestment.Services
 
         public async Task Process(BlockchainTransactionMessage msg)
         {
-            if (string.IsNullOrWhiteSpace(msg.InvestorEmail))
-            {
-                // if investor is not specified try to find her by address
-                var investorAttributeType = msg.CurrencyType == CurrencyType.Bitcoin
-                    ? InvestorAttributeType.PayInBtcAddress
-                    : InvestorAttributeType.PayInEthAddress;
-
-                msg.InvestorEmail = await _investorAttributeRepository.GetInvestorEmailAsync(investorAttributeType, msg.DestinationAddress);
-            }
-
-            if (string.IsNullOrWhiteSpace(msg.InvestorEmail))
-            {
-                // if investor still not found then it means that destination address
-                // is not a cash-in address of any ICO investor
-                return;
-            }
+            await _log.WriteInfoAsync(_component, _process, $"New transaction: {msg.ToJson()}");
 
             var timeSpan = msg.BlockTimestamp.UtcDateTime - _icoSettings.CampaignStartDateTime.ToUniversalTime();
-
-            if (timeSpan < TimeSpan.Zero ||
-                timeSpan > TimeSpan.FromDays(21))
+            if (timeSpan < TimeSpan.Zero || timeSpan > TimeSpan.FromDays(21))
             {
                 throw new InvalidOperationException($"Investment {msg.ToJson()} is out of crowd-sale terms");
             }
 
-            var exchangeRate = await GetExchangeRate(msg.CurrencyType == CurrencyType.Bitcoin ? Pair.BTCUSD : Pair.ETHUSD, msg.BlockTimestamp);
+            var existingTransaction = await _investorTransactionRepository.GetAsync(msg.InvestorEmail, msg.TransactionId);
+            if (existingTransaction != null)
+            {
+                await _log.WriteInfoAsync(_component, _process, $"The transaction with TransactionId='{msg.TransactionId}' was already processed");
+                return;
+            }
 
-            if (exchangeRate == null ||
-                exchangeRate.AverageRate == null)
+            var investor = await _investorRepository.GetAsync(msg.InvestorEmail);
+            if (investor == null)
+            {
+                throw new InvalidOperationException($"The investor with email='{msg.InvestorEmail}' was not found");
+            }
+
+            var assetPair = msg.CurrencyType == CurrencyType.Bitcoin ? Pair.BTCUSD : Pair.ETHUSD;
+            var exchangeRate = await _exRateClient.GetAverageRate(assetPair, msg.BlockTimestamp.UtcDateTime);
+            if (exchangeRate == null)
             {
                 throw new InvalidOperationException($"Exchange rate not found for investment {msg.ToJson()}");
             }
+            if (exchangeRate.AverageRate == null || exchangeRate.AverageRate == 0)
+            {
+                throw new InvalidOperationException($"Exchange rate is not valid: {exchangeRate.ToJson()}. Transaction message: {msg.ToJson()}");
+            }
 
-            var totalVld = 0M;
+            var transaction = await SaveTransaction(msg, exchangeRate);
 
-            if (!decimal.TryParse(await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedVld), out totalVld))
+            await SendConfirmationEmail(transaction, msg.Link);
+            await UpdateCampaignAmounts(transaction);
+            await UpdateInvestorAmounts(transaction);
+            await RequestKyc(transaction.Email);
+        }
+
+        private async Task<InvestorTransaction> SaveTransaction(BlockchainTransactionMessage msg, AverageRateResponse exchangeRate)
+        {
+            var totalVldStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedVld);
+            if (!decimal.TryParse(totalVldStr, out var totalVld))
             {
                 totalVld = 0M;
             }
 
             var avgExchangeRate = Convert.ToDecimal(exchangeRate.AverageRate);
-            var price = GetPrice(totalVld, msg.BlockTimestamp);
+            var tokenPrice = GetTokenPrice(totalVld, msg.BlockTimestamp);
             var amountUsd = msg.Amount * avgExchangeRate;
-            var amountVld = DecimalExtensions.RoundDown(amountUsd / price, 4); // round down to 4 decimal places
+            var amountVld = DecimalExtensions.RoundDown(amountUsd / tokenPrice, _icoSettings.TokenDecimals);
 
-            // save transaction info for investor 
-            await _cryptoInvestmentRepository.SaveAsync(new CryptoInvestment
+            var transaction = msg.TransactionId;
+            if (msg.CurrencyType == CurrencyType.Bitcoin && msg.TransactionId.Contains("-"))
             {
-                InvestorEmail = msg.InvestorEmail,
-                BlockId = msg.BlockId,
-                BlockTimestamp = msg.BlockTimestamp.UtcDateTime,
-                CurrencyType = msg.CurrencyType,
-                DestinationAddress = msg.DestinationAddress,
+                transaction = msg.TransactionId.Substring(0, msg.TransactionId.IndexOf("-"));
+            }
+
+            var investorTransaction = new InvestorTransaction
+            {
+                Email = msg.InvestorEmail,
                 TransactionId = msg.TransactionId,
+                CreatedUtc = msg.BlockTimestamp.UtcDateTime,
+                Currency = msg.CurrencyType,
+                BlockId = msg.BlockId,
+                Transaction = transaction,
+                PayInAddress = msg.DestinationAddress,
                 Amount = msg.Amount,
-                ExchangeRate = avgExchangeRate,
                 AmountUsd = amountUsd,
-                Price = price,
-                AmountVld = amountVld,
-                Context = exchangeRate.Rates.ToJson()
-            });
-
-            // log full transaction info
-            await _log.WriteInfoAsync(_component, _process, msg.ToJson(), "Investment processed");
-
-            await SendConfirmationEmail(msg);
-
-            await UpdateCampaignDetails(msg, amountUsd, amountVld);
-
-            await UpdateInvestorDetails(msg, amountUsd, amountVld);
-        }
-
-        private async Task SendConfirmationEmail(BlockchainTransactionMessage msg)
-        {
-            var asset = msg.CurrencyType == CurrencyType.Bitcoin ? "BTC" : "ETH";
-            var email = new InvestorNewTransactionMessage
-            {
-                EmailTo = msg.InvestorEmail,
-                Payment = $"{msg.Amount} {asset}",
-                TransactionLink = msg.Link
+                AmountToken = amountVld,
+                TokenPrice = tokenPrice,
+                ExchangeRate = avgExchangeRate,
+                ExchangeRateContext = exchangeRate.Rates.ToJson()
             };
 
-            await _investmentMailSender.SendAsync(email);
+            await _investorTransactionRepository.SaveAsync(investorTransaction);
+            await _log.WriteInfoAsync(_component, _process, $"Transaction saved : {investorTransaction.ToJson()}");
 
-            await _log.WriteInfoAsync(_component, _process, email.ToJson(),
-                $"Investment confirmation sent to {msg.InvestorEmail}");
+            return investorTransaction;
         }
 
-        private async Task UpdateCampaignDetails(BlockchainTransactionMessage msg, decimal amountUsd, decimal amountVld)
-        {
-            // increase the total ICO amounts
-            await _campaignInfoRepository.IncrementValue(CampaignInfoType.AmountInvestedVld, amountVld);
-            await _campaignInfoRepository.IncrementValue(CampaignInfoType.AmountInvestedUsd, amountUsd);
-            await _campaignInfoRepository.IncrementValue(msg.CurrencyType == CurrencyType.Bitcoin ? CampaignInfoType.AmountInvestedBtc : CampaignInfoType.AmountInvestedBtc, msg.Amount);
-        }
-
-        private async Task UpdateInvestorDetails(BlockchainTransactionMessage msg, decimal amountUsd, decimal amountVld)
-        {
-            var investor = await _investorRepository.GetAsync(msg.InvestorEmail);
-
-            if (msg.CurrencyType == CurrencyType.Bitcoin)
-            {
-                investor.AmountBtc += msg.Amount;
-            }
-            else
-            {
-                investor.AmountEth += msg.Amount;
-            }
-
-            investor.AmountUsd += amountUsd;
-            investor.AmountVld += amountVld;
-
-            if (investor.AmountUsd >= _icoSettings.KycThreshold && string.IsNullOrEmpty(investor.KycProcessId))
-            {
-                // TODO: get actual KYC identitfier from provider
-                investor.KycProcessId = Guid.NewGuid().ToString();
-
-                await _kycMailSender.SendAsync(InvestorKycRequestMessage.Create(investor.Email, investor.KycProcessId));
-
-                await _log.WriteInfoAsync(_component, _process, investor.KycProcessId,
-                    $"KYC requested for {investor.Email}");
-            }
-
-            await _investorRepository.UpdateAsync(investor);
-        }
-
-        private async Task<AverageRateResponse> GetExchangeRate(Pair assetPair, DateTimeOffset blockTimestamp)
+        private async Task SendConfirmationEmail(InvestorTransaction tx, string link)
         {
             try
             {
-                return await _exRateClient.GetAverageRate(assetPair, blockTimestamp.UtcDateTime);
+                var asset = "";
+
+                switch (tx.Currency)
+                {
+                    case CurrencyType.Bitcoin:
+                        asset = "BTC";
+                        break;
+                    case CurrencyType.Ether:
+                        asset = "ETH";
+                        break;
+                    default:
+                        break;
+                }
+
+                var message = new InvestorNewTransactionMessage
+                {
+                    EmailTo = tx.Email,
+                    Payment = $"{tx.Amount} {asset}",
+                    TransactionLink = link
+                };
+
+                await _investmentMailSender.SendAsync(message);
+
+                await _log.WriteInfoAsync(_component, nameof(SendConfirmationEmail),
+                    $"Transaction confirmation email was sent: {message.ToJson()}");
             }
-            catch (HttpOperationException ex)
+            catch (Exception ex)
             {
-                if (ex.Response.StatusCode == HttpStatusCode.NoContent)
-                    return null;
-                else
-                    throw;
+                await _log.WriteErrorAsync(_component, nameof(SendConfirmationEmail), 
+                    $"Failed to send confirmation email for transaction: tx={tx.ToJson()}, link={link}", ex);
             }
         }
 
-        private decimal GetPrice(decimal currentTotal, DateTimeOffset blockTimestamp)
+        private async Task UpdateCampaignAmounts(InvestorTransaction tx)
+        {
+            if (tx.Currency == CurrencyType.Bitcoin)
+            {
+                await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedBtc, tx.Amount);
+            }
+            if (tx.Currency == CurrencyType.Ether)
+            {
+                await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedEth, tx.Amount);
+            }
+
+            await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedVld, tx.AmountToken);
+            await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedUsd, tx.AmountUsd);
+        }
+
+        private async Task IncrementCampaignInfoParam(CampaignInfoType type, decimal value)
+        {
+            try
+            {
+                await _campaignInfoRepository.IncrementValue(type, value);
+            }
+            catch (Exception ex)
+            {
+                await _log.WriteErrorAsync(_component, nameof(UpdateCampaignAmounts),
+                    $"Failed to update CampaignInfo.{Enum.GetName(typeof(CampaignInfoType), type)}: {value}", ex);
+            }
+        }
+
+        private async Task UpdateInvestorAmounts(InvestorTransaction tx)
+        {
+            try
+            {
+                if (tx.Currency == CurrencyType.Bitcoin)
+                {
+                    await _investorRepository.IncrementBtc(tx.Email, tx.Amount, tx.AmountUsd, tx.AmountToken);
+                }
+                if (tx.Currency == CurrencyType.Ether)
+                {
+                    await _investorRepository.IncrementEth(tx.Email, tx.Amount, tx.AmountUsd, tx.AmountToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                await _log.WriteErrorAsync(_component, nameof(UpdateInvestorAmounts),
+                    $"Failed to update investor amounts: email={tx.ToJson()}", ex);
+            }
+        }
+
+        private async Task RequestKyc(string email)
+        {
+            try
+            {
+                var investor = await _investorRepository.GetAsync(email);
+
+                if (string.IsNullOrEmpty(investor.KycRequestId) && investor.AmountUsd >= _icoSettings.KycThreshold)
+                {
+                    // TODO: get actual KYC identitfier from provider
+                    var kycRequestId = Guid.NewGuid().ToString();
+
+                    await _investorRepository.SaveKycAsync(email, kycRequestId);
+
+                    var message = InvestorKycRequestMessage.Create(investor.Email, investor.KycRequestId);
+                    await _kycMailSender.SendAsync(message);
+
+                    await _log.WriteInfoAsync(_component, nameof(RequestKyc),
+                        $"KYC request email was sent: {message.ToJson()}");
+                }
+            }
+            catch (Exception ex)
+            {
+                await _log.WriteErrorAsync(_component, nameof(UpdateCampaignAmounts),
+                    $"Failed to Request KYC: {email}", ex);
+            }
+        }
+
+        private decimal GetTokenPrice(decimal currentTotal, DateTimeOffset blockTimestamp)
         {
             if (currentTotal < 20000000)
             {
