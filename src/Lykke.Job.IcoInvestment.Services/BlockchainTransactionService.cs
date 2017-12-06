@@ -231,7 +231,11 @@ namespace Lykke.Job.IcoInvestment.Services
 
                     await _investorRepository.SaveKycAsync(email, kycRequestId);
 
-                    var message = InvestorKycRequestMessage.Create(investor.Email, investor.KycRequestId);
+                    var message = new InvestorKycRequestMessage
+                    {
+                        EmailTo = investor.Email,
+                        KycLink = "http://test.valid.global/kyc/" + investor.KycRequestId
+                    };
                     await _kycMailSender.SendAsync(message);
 
                     await _log.WriteInfoAsync(_component, nameof(RequestKyc),
