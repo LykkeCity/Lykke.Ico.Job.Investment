@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Net;
 using System.Threading.Tasks;
 using Common;
 using Common.Log;
@@ -12,59 +11,56 @@ using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments;
 using Lykke.Job.IcoInvestment.Core.Services;
-using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
 using Lykke.Service.IcoExRate.Client;
 using Lykke.Service.IcoExRate.Client.AutorestClient.Models;
 using Microsoft.Rest;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
+using Lykke.Ico.Core.Repositories.CampaignSettings;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
-    public class BlockchainTransactionService : IBlockchainTransactionService
+    public class TransactionService : ITransactionService
     {
         private readonly ILog _log;
         private readonly IIcoExRateClient _exRateClient;
         private readonly IInvestorAttributeRepository _investorAttributeRepository;
         private readonly ICampaignInfoRepository _campaignInfoRepository;
+        private readonly ICampaignSettingsRepository _campaignSettingsRepository;
         private readonly IInvestorTransactionRepository _investorTransactionRepository;
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
         private readonly IQueuePublisher<InvestorKycRequestMessage> _kycMailSender;
-        private readonly IcoSettings _icoSettings;
-        private readonly string _component = nameof(BlockchainTransactionService);
+        private readonly IQueuePublisher<InvestorNeedMoreInvestmentMessage> _needMoreInvestmentMailSender;
+        private readonly string _component = nameof(TransactionService);
         private readonly string _process = nameof(Process);
 
-        public BlockchainTransactionService(
+        public TransactionService(
             ILog log,
             IIcoExRateClient exRateClient, 
             IInvestorAttributeRepository investorAttributeRepository, 
             ICampaignInfoRepository campaignInfoRepository,
+            ICampaignSettingsRepository campaignSettingsRepository,
             IInvestorTransactionRepository investorTransactionRepository,
             IInvestorRepository investorRepository,
             IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender,
             IQueuePublisher<InvestorKycRequestMessage> kycMailSender,
-            IcoSettings icoSettings)
+            IQueuePublisher<InvestorNeedMoreInvestmentMessage> needMoreInvestmentMailSender)
         {
             _log = log;
             _exRateClient = exRateClient;
             _investorAttributeRepository = investorAttributeRepository;
             _campaignInfoRepository = campaignInfoRepository;
+            _campaignSettingsRepository = campaignSettingsRepository;
             _investorTransactionRepository = investorTransactionRepository;
             _investorRepository = investorRepository;
             _investmentMailSender = investmentMailSender;
             _kycMailSender = kycMailSender;
-            _icoSettings = icoSettings;
+            _needMoreInvestmentMailSender = needMoreInvestmentMailSender;
         }
 
         public async Task Process(BlockchainTransactionMessage msg)
         {
             await _log.WriteInfoAsync(_component, _process, $"New transaction: {msg.ToJson()}");
-
-            var timeSpan = msg.BlockTimestamp.UtcDateTime - _icoSettings.CampaignStartDateTime.ToUniversalTime();
-            if (timeSpan < TimeSpan.Zero || timeSpan > TimeSpan.FromDays(21))
-            {
-                throw new InvalidOperationException($"Investment {msg.ToJson()} is out of crowd-sale terms");
-            }
 
             var existingTransaction = await _investorTransactionRepository.GetAsync(msg.InvestorEmail, msg.TransactionId);
             if (existingTransaction != null)
@@ -73,10 +69,26 @@ namespace Lykke.Job.IcoInvestment.Services
                 return;
             }
 
-            var investor = await _investorRepository.GetAsync(msg.InvestorEmail);
-            if (investor == null)
+            var settings = await _campaignSettingsRepository.GetAsync();
+            if (settings == null)
             {
-                throw new InvalidOperationException($"The investor with email='{msg.InvestorEmail}' was not found");
+                throw new InvalidOperationException($"Campaign settings was not found");
+            }
+
+            var txDateTime = msg.BlockTimestamp.UtcDateTime;
+            if (txDateTime < settings.StartDateTimeUtc || txDateTime > settings.EndDateTimeUtc)
+            {
+                throw new InvalidOperationException($"Transaction date {txDateTime} is out of campaign start/end dates: {settings.StartDateTimeUtc} - {settings.EndDateTimeUtc}");
+            }
+
+            var soldTokensAmountStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedToken);
+            if (!Decimal.TryParse(soldTokensAmountStr, out var soldTokensAmount))
+            {
+                soldTokensAmount = 0;
+            }
+            if (soldTokensAmount > settings.TotalTokensAmount)
+            {
+                throw new InvalidOperationException($"All tokens were sold out. Sold Tokens={soldTokensAmount}, Total Tokens= {settings.TotalTokensAmount}");
             }
 
             var assetPair = msg.CurrencyType == CurrencyType.Bitcoin ? Pair.BTCUSD : Pair.ETHUSD;
@@ -90,26 +102,31 @@ namespace Lykke.Job.IcoInvestment.Services
                 throw new InvalidOperationException($"Exchange rate is not valid: {exchangeRate.ToJson()}. Transaction message: {msg.ToJson()}");
             }
 
-            var transaction = await SaveTransaction(msg, exchangeRate);
+            var transaction = await SaveTransaction(msg, settings, exchangeRate, soldTokensAmount);
 
-            await SendConfirmationEmail(transaction, msg.Link);
             await UpdateCampaignAmounts(transaction);
             await UpdateInvestorAmounts(transaction);
-            await RequestKyc(transaction.Email);
+            await SendConfirmationEmail(transaction, msg.Link);
+
+            var investor = await _investorRepository.GetAsync(msg.InvestorEmail);
+            if (!investor.KycRequestedUtc.HasValue)
+            {
+                await RequestKyc(investor.Email);
+            }
+            if (investor.AmountUsd < settings.MinInvestAmountUsd)
+            {
+                await SendNeedMoreInvestmentEmail(investor.Email, investor.AmountUsd, settings.MinInvestAmountUsd);
+            }
         }
 
-        private async Task<InvestorTransaction> SaveTransaction(BlockchainTransactionMessage msg, AverageRateResponse exchangeRate)
+        private async Task<InvestorTransaction> SaveTransaction(BlockchainTransactionMessage msg, 
+            ICampaignSettings settings, AverageRateResponse exchangeRate, decimal soldTokensAmount)
         {
-            var totalVldStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedToken);
-            if (!decimal.TryParse(totalVldStr, out var totalVld))
-            {
-                totalVld = 0M;
-            }
-
             var avgExchangeRate = Convert.ToDecimal(exchangeRate.AverageRate);
-            var tokenPrice = GetTokenPrice(totalVld, msg.BlockTimestamp);
+            var tokenPrice = GetTokenPrice(soldTokensAmount, settings.TokenBasePriceUsd, 
+                settings.StartDateTimeUtc, msg.BlockTimestamp.UtcDateTime);
             var amountUsd = msg.Amount * avgExchangeRate;
-            var amountVld = DecimalExtensions.RoundDown(amountUsd / tokenPrice, _icoSettings.TokenDecimals);
+            var amountVld = DecimalExtensions.RoundDown(amountUsd / tokenPrice, settings.TokenDecimals);
 
             var transaction = msg.TransactionId;
             if (msg.CurrencyType == CurrencyType.Bitcoin && msg.TransactionId.Contains("-"))
@@ -135,7 +152,8 @@ namespace Lykke.Job.IcoInvestment.Services
             };
 
             await _investorTransactionRepository.SaveAsync(investorTransaction);
-            await _log.WriteInfoAsync(_component, _process, $"Transaction saved : {investorTransaction.ToJson()}");
+            await _log.WriteInfoAsync(_component, _process, 
+                $"Transaction saved : {investorTransaction.ToJson()}");
 
             return investorTransaction;
         }
@@ -200,8 +218,9 @@ namespace Lykke.Job.IcoInvestment.Services
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(_component, nameof(UpdateCampaignAmounts),
-                    $"Failed to update CampaignInfo.{Enum.GetName(typeof(CampaignInfoType), type)}: {value}", ex);
+                await _log.WriteErrorAsync(_component, nameof(IncrementCampaignInfoParam),
+                    $"Failed to update CampaignInfo.{Enum.GetName(typeof(CampaignInfoType), type)}: {value}",
+                    ex);
             }
         }
 
@@ -222,59 +241,79 @@ namespace Lykke.Job.IcoInvestment.Services
         {
             try
             {
-                var investor = await _investorRepository.GetAsync(email);
+                // TODO: get actual KYC identitfier from provider
+                var kycRequestId = Guid.NewGuid().ToString();
 
-                if (string.IsNullOrEmpty(investor.KycRequestId) && investor.AmountUsd >= _icoSettings.KycThreshold)
+                await _investorRepository.SaveKycAsync(email, kycRequestId);
+
+                var message = new InvestorKycRequestMessage
                 {
-                    // TODO: get actual KYC identitfier from provider
-                    var kycRequestId = Guid.NewGuid().ToString();
+                    EmailTo = email,
+                    KycLink = "http://test.valid.global/kyc/" + kycRequestId
+                };
+                await _kycMailSender.SendAsync(message);
 
-                    await _investorRepository.SaveKycAsync(email, kycRequestId);
-
-                    var message = new InvestorKycRequestMessage
-                    {
-                        EmailTo = investor.Email,
-                        KycLink = "http://test.valid.global/kyc/" + investor.KycRequestId
-                    };
-                    await _kycMailSender.SendAsync(message);
-
-                    await _log.WriteInfoAsync(_component, nameof(RequestKyc),
-                        $"KYC request email was sent: {message.ToJson()}");
-                }
+                await _log.WriteInfoAsync(_component, nameof(RequestKyc),
+                    $"InvestorKycRequestMessage was sent: {message.ToJson()}");
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(_component, nameof(UpdateCampaignAmounts),
-                    $"Failed to Request KYC: {email}", ex);
+                await _log.WriteErrorAsync(_component, nameof(RequestKyc),
+                    $"Failed to request KYC: {email}", ex);
             }
         }
 
-        private decimal GetTokenPrice(decimal currentTotal, DateTimeOffset blockTimestamp)
+        private async Task SendNeedMoreInvestmentEmail(string email, decimal investedAmount, decimal minAmount)
+        {
+            try
+            {
+                var message = new InvestorNeedMoreInvestmentMessage
+                {
+                    EmailTo = email,
+                    InvestedAmount = investedAmount,
+                    MinAmount = minAmount
+                };
+
+                await _needMoreInvestmentMailSender.SendAsync(message);
+
+                await _log.WriteInfoAsync(_component, nameof(SendNeedMoreInvestmentEmail),
+                    $"InvestorNeedMoreInvestmentMessage was sent: {message.ToJson()}");
+            }
+            catch (Exception ex)
+            {
+                await _log.WriteErrorAsync(_component, nameof(SendNeedMoreInvestmentEmail),
+                    $"Failed to send InvestorNeedMoreInvestmentMessage: email={email}, investedAmount={investedAmount}, minAmount", 
+                    ex);
+            }
+        }        
+
+        private decimal GetTokenPrice(decimal currentTotal, decimal tokenBasePrice, 
+            DateTime txDateTimeUtc, DateTime campaignStartDateTimeUtc)
         {
             if (currentTotal < 20000000)
             {
-                return _icoSettings.BasePrice * 0.75M;
+                return tokenBasePrice * 0.75M;
             }
 
-            var timeSpan = blockTimestamp.UtcDateTime - _icoSettings.CampaignStartDateTime.ToUniversalTime();
+            var timeSpan = txDateTimeUtc - campaignStartDateTimeUtc;
 
             if (timeSpan < TimeSpan.FromDays(1))
             {
-                return _icoSettings.BasePrice * 0.80M;
+                return tokenBasePrice * 0.80M;
             }
 
             if (timeSpan < TimeSpan.FromDays(7))
             {
-                return _icoSettings.BasePrice * 0.85M;
+                return tokenBasePrice * 0.85M;
             }
 
             if (timeSpan < TimeSpan.FromDays(7 * 2))
             {
-                return _icoSettings.BasePrice * 0.95M;
+                return tokenBasePrice * 0.95M;
             }
             else
             {
-                return _icoSettings.BasePrice;
+                return tokenBasePrice;
             }
         }
     }

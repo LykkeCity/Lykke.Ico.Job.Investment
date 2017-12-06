@@ -3,7 +3,7 @@ using Lykke.Ico.Core.Queues.Transactions;
 
 namespace Lykke.Job.IcoInvestment.Core.Services
 {
-    public interface IBlockchainTransactionService
+    public interface ITransactionService
     {
         Task Process(BlockchainTransactionMessage message);
     }

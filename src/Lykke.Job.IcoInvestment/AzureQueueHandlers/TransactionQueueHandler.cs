@@ -7,12 +7,12 @@ using Lykke.JobTriggers.Triggers.Attributes;
 
 namespace Lykke.Job.IcoInvestment.AzureQueueHandlers
 {
-    public class BlockchainTransactionQueueHandler
+    public class TransactionQueueHandler
     {
         private ILog _log;
-        private IBlockchainTransactionService _blockchainTxService;
+        private ITransactionService _blockchainTxService;
 
-        public BlockchainTransactionQueueHandler(ILog log, IBlockchainTransactionService blockchainTxService)
+        public TransactionQueueHandler(ILog log, ITransactionService blockchainTxService)
         {
             _log = log;
             _blockchainTxService = blockchainTxService;

@@ -17,6 +17,7 @@ using Xunit;
 using Lykke.Job.IcoInvestment.Core.Domain;
 using Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
+using Lykke.Ico.Core.Repositories.CampaignSettings;
 
 namespace Lykke.Job.IcoInvestment.Tests
 {
@@ -26,24 +27,20 @@ namespace Lykke.Job.IcoInvestment.Tests
         private Mock<IIcoExRateClient> _exRateClient;
         private Mock<IInvestorAttributeRepository> _investorAttributeRepository;
         private Mock<ICampaignInfoRepository> _campaignInfoRepository;
+        private Mock<ICampaignSettingsRepository> _campaignSettingsRepository;
         private Mock<IInvestorTransactionRepository> _investorTransactionRepository;
         private Mock<IInvestorRepository> _investorRepository;
         private Mock<IQueuePublisher<InvestorNewTransactionMessage>> _investmentMailSender;
         private Mock<IQueuePublisher<InvestorKycRequestMessage>> _kycMailSender;
+        private Mock<IQueuePublisher<InvestorNeedMoreInvestmentMessage>> _needMoreInfoMailSender;
+        private ICampaignSettings _campaignSettings;
         private IInvestor _investor;
         private IInvestorTransaction _investorTransaction;
-        private IcoSettings _icoSettings;
         private decimal _usdAmount = decimal.Zero;
 
-        private BlockchainTransactionService Init(string investorEmail = "test@test.test", double exchangeRate = 1.0)
+        private TransactionService Init(string investorEmail = "test@test.test", double exchangeRate = 1.0)
         {
             _log = new LogToMemory();
-            _icoSettings = new IcoSettings
-            {
-                CampaignStartDateTime = DateTime.Today,
-                KycThreshold = decimal.MaxValue,
-                BasePrice = decimal.One
-            };
 
             _campaignInfoRepository = new Mock<ICampaignInfoRepository>();
 
@@ -51,6 +48,22 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Setup(m => m.IncrementValue(It.Is<CampaignInfoType>(t => t == CampaignInfoType.AmountInvestedUsd), It.IsAny<decimal>()))
                 .Callback((CampaignInfoType t, decimal v) => _usdAmount += v)
                 .Returns(() => Task.CompletedTask);
+
+            _campaignSettings = new CampaignSettings
+            {
+                StartDateTimeUtc = DateTime.UtcNow.AddDays(-1),
+                EndDateTimeUtc = DateTime.UtcNow.AddDays(1),
+                TokenDecimals = 4,
+                MinInvestAmountUsd = 1000,
+                TokenBasePriceUsd = 0.064M,
+                TotalTokensAmount = 1000000000
+            };
+
+            _campaignSettingsRepository = new Mock<ICampaignSettingsRepository>();
+
+            _campaignSettingsRepository
+                .Setup(m => m.GetAsync())
+                .Returns(() => Task.FromResult(_campaignSettings));
 
             _exRateClient = new Mock<IIcoExRateClient>();
 
@@ -100,16 +113,23 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Setup(m => m.SendAsync(It.IsAny<InvestorKycRequestMessage>()))
                 .Returns(() => Task.CompletedTask);
 
-            return new BlockchainTransactionService(
+            _needMoreInfoMailSender = new Mock<IQueuePublisher<InvestorNeedMoreInvestmentMessage>>();
+
+            _needMoreInfoMailSender
+                .Setup(m => m.SendAsync(It.IsAny<InvestorNeedMoreInvestmentMessage>()))
+                .Returns(() => Task.CompletedTask);
+
+            return new TransactionService(
                 _log,
                 _exRateClient.Object,
                 _investorAttributeRepository.Object,
                 _campaignInfoRepository.Object,
+                _campaignSettingsRepository.Object,
                 _investorTransactionRepository.Object,
                 _investorRepository.Object,
                 _investmentMailSender.Object,
                 _kycMailSender.Object,
-                _icoSettings);
+                _needMoreInfoMailSender.Object);
         }
 
         [Fact]
