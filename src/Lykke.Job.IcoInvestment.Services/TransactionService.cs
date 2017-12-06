@@ -270,7 +270,7 @@ namespace Lykke.Job.IcoInvestment.Services
                 var message = new InvestorNeedMoreInvestmentMessage
                 {
                     EmailTo = email,
-                    InvestedAmount = investedAmount,
+                    InvestedAmount = DecimalExtensions.RoundDown(investedAmount, 2),
                     MinAmount = minAmount
                 };
 
