@@ -4,6 +4,8 @@ using Lykke.Ico.Core;
 using Lykke.Ico.Core.Queues.Transactions;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.JobTriggers.Triggers.Attributes;
+using System;
+using Common;
 
 namespace Lykke.Job.IcoInvestment.AzureQueueHandlers
 {
@@ -18,10 +20,19 @@ namespace Lykke.Job.IcoInvestment.AzureQueueHandlers
             _blockchainTxService = blockchainTxService;
         }
         
-        [QueueTrigger(Consts.Transactions.Queues.BlockchainTransaction)]
-        public async Task HandleBlockchainTransactionMessage(BlockchainTransactionMessage msg)
+        [QueueTrigger(Consts.Transactions.Queues.Investor)]
+        public async Task HandleTransactionMessage(TransactionMessage msg)
         {
-            await _blockchainTxService.Process(msg);
+            try
+            {
+                await _blockchainTxService.Process(msg);
+            }
+            catch (Exception ex)
+            {
+                await _log.WriteErrorAsync(nameof(TransactionQueueHandler), nameof(HandleTransactionMessage),
+                    $"Failed to process message: {msg.ToJson()}", ex);
+                throw;
+            }
         }
     }
 }   

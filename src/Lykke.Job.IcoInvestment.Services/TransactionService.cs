@@ -16,6 +16,7 @@ using Lykke.Service.IcoExRate.Client.AutorestClient.Models;
 using Microsoft.Rest;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
+using System.Collections.Generic;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
@@ -58,14 +59,15 @@ namespace Lykke.Job.IcoInvestment.Services
             _needMoreInvestmentMailSender = needMoreInvestmentMailSender;
         }
 
-        public async Task Process(BlockchainTransactionMessage msg)
+        public async Task Process(TransactionMessage msg)
         {
             await _log.WriteInfoAsync(_component, _process, $"New transaction: {msg.ToJson()}");
 
-            var existingTransaction = await _investorTransactionRepository.GetAsync(msg.InvestorEmail, msg.TransactionId);
+            var existingTransaction = await _investorTransactionRepository.GetAsync(msg.Email, msg.UniqueId);
             if (existingTransaction != null)
             {
-                await _log.WriteInfoAsync(_component, _process, $"The transaction with TransactionId='{msg.TransactionId}' was already processed");
+                await _log.WriteInfoAsync(_component, _process, 
+                    $"The transaction with UniqueId='{msg.UniqueId}' was already processed");
                 return;
             }
 
@@ -75,10 +77,10 @@ namespace Lykke.Job.IcoInvestment.Services
                 throw new InvalidOperationException($"Campaign settings was not found");
             }
 
-            var txDateTime = msg.BlockTimestamp.UtcDateTime;
-            if (txDateTime < settings.StartDateTimeUtc || txDateTime > settings.EndDateTimeUtc)
+            if (msg.CreatedUtc < settings.StartDateTimeUtc || msg.CreatedUtc > settings.EndDateTimeUtc)
             {
-                throw new InvalidOperationException($"Transaction date {txDateTime} is out of campaign start/end dates: {settings.StartDateTimeUtc} - {settings.EndDateTimeUtc}");
+                throw new InvalidOperationException($"Transaction date {msg.CreatedUtc} is out of campaign start/end dates: " +
+                    $"{settings.StartDateTimeUtc} - {settings.EndDateTimeUtc}");
             }
 
             var soldTokensAmountStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedToken);
@@ -88,27 +90,17 @@ namespace Lykke.Job.IcoInvestment.Services
             }
             if (soldTokensAmount > settings.TotalTokensAmount)
             {
-                throw new InvalidOperationException($"All tokens were sold out. Sold Tokens={soldTokensAmount}, Total Tokens= {settings.TotalTokensAmount}");
+                throw new InvalidOperationException($"All tokens were sold out. Sold Tokens={soldTokensAmount}, " +
+                    $"Total Tokens= {settings.TotalTokensAmount}");
             }
 
-            var assetPair = msg.CurrencyType == CurrencyType.Bitcoin ? Pair.BTCUSD : Pair.ETHUSD;
-            var exchangeRate = await _exRateClient.GetAverageRate(assetPair, msg.BlockTimestamp.UtcDateTime);
-            if (exchangeRate == null)
-            {
-                throw new InvalidOperationException($"Exchange rate not found for investment {msg.ToJson()}");
-            }
-            if (exchangeRate.AverageRate == null || exchangeRate.AverageRate == 0)
-            {
-                throw new InvalidOperationException($"Exchange rate is not valid: {exchangeRate.ToJson()}. Transaction message: {msg.ToJson()}");
-            }
-
-            var transaction = await SaveTransaction(msg, settings, exchangeRate, soldTokensAmount);
+            var transaction = await SaveTransaction(msg, settings, soldTokensAmount);
 
             await UpdateCampaignAmounts(transaction);
             await UpdateInvestorAmounts(transaction);
             await SendConfirmationEmail(transaction, msg.Link);
 
-            var investor = await _investorRepository.GetAsync(msg.InvestorEmail);
+            var investor = await _investorRepository.GetAsync(msg.Email);
             if (!investor.KycRequestedUtc.HasValue)
             {
                 await RequestKyc(investor.Email);
@@ -119,43 +111,59 @@ namespace Lykke.Job.IcoInvestment.Services
             }
         }
 
-        private async Task<InvestorTransaction> SaveTransaction(BlockchainTransactionMessage msg, 
-            ICampaignSettings settings, AverageRateResponse exchangeRate, decimal soldTokensAmount)
+        private async Task<InvestorTransaction> SaveTransaction(TransactionMessage msg, 
+            ICampaignSettings settings, decimal soldTokensAmount)
         {
+            var exchangeRate = await GetExchangeRate(msg);
             var avgExchangeRate = Convert.ToDecimal(exchangeRate.AverageRate);
-            var tokenPrice = GetTokenPrice(soldTokensAmount, settings.TokenBasePriceUsd, 
-                settings.StartDateTimeUtc, msg.BlockTimestamp.UtcDateTime);
+            var tokenPrice = GetTokenPrice(soldTokensAmount, settings.TokenBasePriceUsd, settings.StartDateTimeUtc, msg.CreatedUtc);
             var amountUsd = msg.Amount * avgExchangeRate;
             var amountVld = DecimalExtensions.RoundDown(amountUsd / tokenPrice, settings.TokenDecimals);
 
-            var transaction = msg.TransactionId;
-            if (msg.CurrencyType == CurrencyType.Bitcoin && msg.TransactionId.Contains("-"))
-            {
-                transaction = msg.TransactionId.Substring(0, msg.TransactionId.IndexOf("-"));
-            }
-
             var investorTransaction = new InvestorTransaction
             {
-                Email = msg.InvestorEmail,
+                Email = msg.Email,
+                UniqueId = msg.UniqueId,
+                CreatedUtc = msg.CreatedUtc,
+                Currency = msg.Currency,
                 TransactionId = msg.TransactionId,
-                CreatedUtc = msg.BlockTimestamp.UtcDateTime,
-                Currency = msg.CurrencyType,
                 BlockId = msg.BlockId,
-                Transaction = transaction,
-                PayInAddress = msg.DestinationAddress,
+                PayInAddress = msg.PayInAddress,
                 Amount = msg.Amount,
                 AmountUsd = amountUsd,
                 AmountToken = amountVld,
+                Fee = msg.Fee,
                 TokenPrice = tokenPrice,
                 ExchangeRate = avgExchangeRate,
                 ExchangeRateContext = exchangeRate.Rates.ToJson()
             };
 
             await _investorTransactionRepository.SaveAsync(investorTransaction);
-            await _log.WriteInfoAsync(_component, _process, 
+            await _log.WriteInfoAsync(_component, nameof(SaveTransaction), 
                 $"Transaction saved : {investorTransaction.ToJson()}");
 
             return investorTransaction;
+        }
+
+        private async Task<AverageRateResponse> GetExchangeRate(TransactionMessage msg)
+        {
+            if (msg.Currency == CurrencyType.Fiat)
+            {
+                return new AverageRateResponse { AverageRate = 0, Rates = new List<RateResponse>() };
+            }
+
+            var assetPair = msg.Currency == CurrencyType.Bitcoin ? Pair.BTCUSD : Pair.ETHUSD;
+            var exchangeRate = await _exRateClient.GetAverageRate(assetPair, msg.CreatedUtc);
+            if (exchangeRate == null)
+            {
+                throw new InvalidOperationException($"Exchange rate was not found");
+            }
+            if (exchangeRate.AverageRate == null || exchangeRate.AverageRate == 0)
+            {
+                throw new InvalidOperationException($"Exchange rate is not valid: {exchangeRate.ToJson()}");
+            }
+
+            return exchangeRate;
         }
 
         private async Task SendConfirmationEmail(InvestorTransaction tx, string link)
@@ -172,14 +180,15 @@ namespace Lykke.Job.IcoInvestment.Services
                     case CurrencyType.Ether:
                         asset = "ETH";
                         break;
-                    default:
+                    case CurrencyType.Fiat:
+                        asset = "USD";
                         break;
                 }
 
                 var message = new InvestorNewTransactionMessage
                 {
                     EmailTo = tx.Email,
-                    Payment = $"{tx.Amount} {asset}",
+                    Payment = $"{tx.Amount + tx.Fee} {asset}",
                     TransactionLink = link
                 };
 

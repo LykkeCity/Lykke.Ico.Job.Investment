@@ -143,22 +143,24 @@ namespace Lykke.Job.IcoInvestment.Tests
             var testBlockTimestamp = DateTimeOffset.Now;
             var testAddress = "testAddress";
             var testTransactionId = "testTransaction-1";
+            var uniqueId = "testTransaction";
             var testEmail = "test@test.test";
             var testLink = "testLink";
             var testCurrency = CurrencyType.Bitcoin;
             var svc = Init(testEmail, Decimal.ToDouble(testExchangeRate));
 
             // Act
-            await svc.Process(new BlockchainTransactionMessage
+            await svc.Process(new TransactionMessage
             {
-                InvestorEmail = testEmail,
+                Email = testEmail,
                 Amount = testAmount,
                 BlockId = testBlockId,
-                BlockTimestamp = testBlockTimestamp,
-                CurrencyType = testCurrency,
-                DestinationAddress = testAddress,
+                CreatedUtc = testBlockTimestamp.UtcDateTime,
+                Currency = testCurrency,
+                PayInAddress = testAddress,
                 Link = testLink,
-                TransactionId = testTransactionId
+                TransactionId = testTransactionId,
+                UniqueId = uniqueId
             });
 
             // Assert
@@ -183,15 +185,16 @@ namespace Lykke.Job.IcoInvestment.Tests
         {
             // Arrange
             var svc = Init(null);
-            var message = new BlockchainTransactionMessage
+            var message = new TransactionMessage
             {
                 Amount = 0M,
                 BlockId = "",
-                BlockTimestamp = DateTimeOffset.MinValue,
-                CurrencyType = CurrencyType.Bitcoin,
-                DestinationAddress = "test@test.test",
+                CreatedUtc = DateTimeOffset.MinValue.UtcDateTime,
+                Currency = CurrencyType.Bitcoin,
+                PayInAddress = "test@test.test",
                 Link = "",
-                TransactionId = ""
+                TransactionId = "",
+                UniqueId = ""
             };
 
             // Act
