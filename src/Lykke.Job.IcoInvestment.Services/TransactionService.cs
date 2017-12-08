@@ -71,6 +71,12 @@ namespace Lykke.Job.IcoInvestment.Services
                 return;
             }
 
+            var investor = await _investorRepository.GetAsync(msg.Email);
+            if (investor == null)
+            {
+                throw new InvalidOperationException($"Investor with email={msg.Email} was not found");
+            }
+
             var settings = await _campaignSettingsRepository.GetAsync();
             if (settings == null)
             {
@@ -100,14 +106,14 @@ namespace Lykke.Job.IcoInvestment.Services
             await UpdateInvestorAmounts(transaction);
             await SendConfirmationEmail(transaction, msg.Link);
 
-            var investor = await _investorRepository.GetAsync(msg.Email);
-            if (!investor.KycRequestedUtc.HasValue)
-            {
-                await RequestKyc(investor.Email);
-            }
+            investor = await _investorRepository.GetAsync(msg.Email);
             if (investor.AmountUsd < settings.MinInvestAmountUsd)
             {
                 await SendNeedMoreInvestmentEmail(investor.Email, investor.AmountUsd, settings.MinInvestAmountUsd);
+            }
+            if (!investor.KycRequestedUtc.HasValue && investor.AmountUsd >= settings.MinInvestAmountUsd)
+            {
+                await RequestKyc(investor.Email);
             }
         }
 
