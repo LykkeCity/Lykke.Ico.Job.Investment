@@ -122,9 +122,10 @@ namespace Lykke.Job.IcoInvestment.Services
         {
             var exchangeRate = await GetExchangeRate(msg);
             var avgExchangeRate = Convert.ToDecimal(exchangeRate.AverageRate);
-            var tokenPrice = GetTokenPrice(soldTokensAmount, settings.TokenBasePriceUsd, settings.StartDateTimeUtc, msg.CreatedUtc);
+            var tokenPrice = GetTokenPrice(soldTokensAmount, settings.TokenBasePriceUsd, 
+                settings.StartDateTimeUtc, msg.CreatedUtc);
             var amountUsd = msg.Amount * avgExchangeRate;
-            var amountVld = DecimalExtensions.RoundDown(amountUsd / tokenPrice, settings.TokenDecimals);
+            var amountVld = amountUsd / tokenPrice;
 
             var investorTransaction = new InvestorTransaction
             {
@@ -137,7 +138,7 @@ namespace Lykke.Job.IcoInvestment.Services
                 PayInAddress = msg.PayInAddress,
                 Amount = msg.Amount,
                 AmountUsd = amountUsd,
-                AmountToken = amountVld,
+                AmountToken = DecimalExtensions.RoundDown(amountVld, settings.TokenDecimals),
                 Fee = msg.Fee,
                 TokenPrice = tokenPrice,
                 ExchangeRate = avgExchangeRate,
