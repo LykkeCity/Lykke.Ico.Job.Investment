@@ -149,7 +149,7 @@ namespace Lykke.Job.IcoInvestment.Services
         {
             if (msg.Currency == CurrencyType.Fiat)
             {
-                return new AverageRateResponse { AverageRate = 0, Rates = new List<RateResponse>() };
+                return new AverageRateResponse { AverageRate = 1, Rates = new List<RateResponse>() };
             }
 
             var assetPair = msg.Currency == CurrencyType.Bitcoin ? Pair.BTCUSD : Pair.ETHUSD;
