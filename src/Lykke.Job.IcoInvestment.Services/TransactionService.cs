@@ -221,6 +221,10 @@ namespace Lykke.Job.IcoInvestment.Services
             {
                 await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedEth, tx.Amount);
             }
+            if (tx.Currency == CurrencyType.Fiat)
+            {
+                await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedFiat, tx.Amount);
+            }
 
             await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedToken, tx.AmountToken);
             await IncrementCampaignInfoParam(CampaignInfoType.AmountInvestedUsd, tx.AmountUsd);
