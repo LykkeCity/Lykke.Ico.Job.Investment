@@ -21,7 +21,7 @@ using Lykke.Ico.Core.Repositories.CampaignSettings;
 
 namespace Lykke.Job.IcoInvestment.Tests
 {
-    public class BlockchainTransactionServiceTests
+    public class TransactionServiceTests
     {
         private ILog _log;
         private Mock<IIcoExRateClient> _exRateClient;
