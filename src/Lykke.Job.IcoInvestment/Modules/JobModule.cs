@@ -78,14 +78,6 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<IQueuePublisher<InvestorNewTransactionMessage>>()
                 .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));
 
-            builder.RegisterType<QueuePublisher<InvestorKycRequestMessage>>()
-                .As<IQueuePublisher<InvestorKycRequestMessage>>()
-                .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));
-
-            builder.RegisterType<QueuePublisher<InvestorNeedMoreInvestmentMessage>>()
-                .As<IQueuePublisher<InvestorNeedMoreInvestmentMessage>>()
-                .WithParameter(TypedParameter.From(_azureQueueSettingsManager.Nested(x => x.ConnectionString)));            
-
             builder.RegisterType<TransactionService>()
                 .As<ITransactionService>()
                 .SingleInstance();

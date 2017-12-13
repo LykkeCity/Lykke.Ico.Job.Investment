@@ -30,8 +30,6 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IInvestorTransactionRepository _investorTransactionRepository;
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
-        private readonly IQueuePublisher<InvestorKycRequestMessage> _kycMailSender;
-        private readonly IQueuePublisher<InvestorNeedMoreInvestmentMessage> _needMoreInvestmentMailSender;
         private readonly string _process = nameof(TransactionService);
 
         public TransactionService(
@@ -42,9 +40,7 @@ namespace Lykke.Job.IcoInvestment.Services
             ICampaignSettingsRepository campaignSettingsRepository,
             IInvestorTransactionRepository investorTransactionRepository,
             IInvestorRepository investorRepository,
-            IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender,
-            IQueuePublisher<InvestorKycRequestMessage> kycMailSender,
-            IQueuePublisher<InvestorNeedMoreInvestmentMessage> needMoreInvestmentMailSender)
+            IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender)
         {
             _log = log;
             _exRateClient = exRateClient;
@@ -54,8 +50,6 @@ namespace Lykke.Job.IcoInvestment.Services
             _investorTransactionRepository = investorTransactionRepository;
             _investorRepository = investorRepository;
             _investmentMailSender = investmentMailSender;
-            _kycMailSender = kycMailSender;
-            _needMoreInvestmentMailSender = needMoreInvestmentMailSender;
         }
 
         public async Task Process(TransactionMessage msg)
@@ -104,17 +98,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
             await UpdateCampaignAmounts(transaction);
             await UpdateInvestorAmounts(transaction);
-            await SendConfirmationEmail(transaction, msg.Link);
-
-            investor = await _investorRepository.GetAsync(msg.Email);
-            if (investor.AmountUsd < settings.MinInvestAmountUsd)
-            {
-                await SendNeedMoreInvestmentEmail(investor.Email, investor.AmountUsd, settings.MinInvestAmountUsd);
-            }
-            if (!investor.KycRequestedUtc.HasValue && investor.AmountUsd >= settings.MinInvestAmountUsd)
-            {
-                await RequestKyc(investor.Email);
-            }
+            await SendConfirmationEmail(transaction, msg.Link, investor, settings);
         }
 
         private async Task<InvestorTransaction> SaveTransaction(TransactionMessage msg, 
@@ -173,7 +157,7 @@ namespace Lykke.Job.IcoInvestment.Services
             return exchangeRate;
         }
 
-        private async Task SendConfirmationEmail(InvestorTransaction tx, string link)
+        private async Task SendConfirmationEmail(InvestorTransaction tx, string link, IInvestor investor, ICampaignSettings settings)
         {
             try
             {
@@ -198,6 +182,20 @@ namespace Lykke.Job.IcoInvestment.Services
                     Payment = $"{tx.Amount + tx.Fee} {asset}",
                     TransactionLink = link
                 };
+
+                if (investor.AmountUsd < settings.MinInvestAmountUsd)
+                {
+                    message.MoreInvestmentRequired = true;
+                    message.InvestedAmount = DecimalExtensions.RoundDown(investor.AmountUsd, 2);
+                    message.MinAmount = settings.MinInvestAmountUsd;
+                }
+
+                if (investor.KycRequestedUtc == null && 
+                    investor.AmountUsd >= settings.MinInvestAmountUsd)
+                {
+                    message.KycRequired = true;
+                    message.KycLink = await RequestKyc(investor.Email);
+                }
 
                 await _investmentMailSender.SendAsync(message);
 
@@ -257,7 +255,7 @@ namespace Lykke.Job.IcoInvestment.Services
             }
         }
 
-        private async Task RequestKyc(string email)
+        private async Task<string> RequestKyc(string email)
         {
             try
             {
@@ -266,46 +264,19 @@ namespace Lykke.Job.IcoInvestment.Services
 
                 await _investorRepository.SaveKycAsync(email, kycRequestId);
 
-                var message = new InvestorKycRequestMessage
-                {
-                    EmailTo = email,
-                    KycLink = "http://test.valid.global/kyc/" + kycRequestId
-                };
-                await _kycMailSender.SendAsync(message);
-
                 await _log.WriteInfoAsync(_process, nameof(RequestKyc),
-                    $"InvestorKycRequestMessage was sent: {message.ToJson()}");
+                    $"KYC requested for {email}");
+
+                return kycRequestId;
             }
             catch (Exception ex)
             {
                 await _log.WriteErrorAsync(_process, nameof(RequestKyc),
-                    $"Failed to request KYC: {email}", ex);
+                    $"Failed to request KYC for {email}", ex);
+
+                throw;
             }
         }
-
-        private async Task SendNeedMoreInvestmentEmail(string email, decimal investedAmount, decimal minAmount)
-        {
-            try
-            {
-                var message = new InvestorNeedMoreInvestmentMessage
-                {
-                    EmailTo = email,
-                    InvestedAmount = DecimalExtensions.RoundDown(investedAmount, 2),
-                    MinAmount = minAmount
-                };
-
-                await _needMoreInvestmentMailSender.SendAsync(message);
-
-                await _log.WriteInfoAsync(_process, nameof(SendNeedMoreInvestmentEmail),
-                    $"InvestorNeedMoreInvestmentMessage was sent: {message.ToJson()}");
-            }
-            catch (Exception ex)
-            {
-                await _log.WriteErrorAsync(_process, nameof(SendNeedMoreInvestmentEmail),
-                    $"Failed to send InvestorNeedMoreInvestmentMessage: email={email}, investedAmount={investedAmount}, minAmount", 
-                    ex);
-            }
-        }        
 
         private decimal GetTokenPrice(decimal currentTotal, decimal tokenBasePrice, 
             DateTime txDateTimeUtc, DateTime campaignStartDateTimeUtc)

@@ -31,8 +31,6 @@ namespace Lykke.Job.IcoInvestment.Tests
         private Mock<IInvestorTransactionRepository> _investorTransactionRepository;
         private Mock<IInvestorRepository> _investorRepository;
         private Mock<IQueuePublisher<InvestorNewTransactionMessage>> _investmentMailSender;
-        private Mock<IQueuePublisher<InvestorKycRequestMessage>> _kycMailSender;
-        private Mock<IQueuePublisher<InvestorNeedMoreInvestmentMessage>> _needMoreInfoMailSender;
         private ICampaignSettings _campaignSettings;
         private IInvestor _investor;
         private IInvestorTransaction _investorTransaction;
@@ -107,18 +105,6 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Setup(m => m.SendAsync(It.IsAny<InvestorNewTransactionMessage>()))
                 .Returns(() => Task.CompletedTask);
 
-            _kycMailSender = new Mock<IQueuePublisher<InvestorKycRequestMessage>>();
-
-            _kycMailSender
-                .Setup(m => m.SendAsync(It.IsAny<InvestorKycRequestMessage>()))
-                .Returns(() => Task.CompletedTask);
-
-            _needMoreInfoMailSender = new Mock<IQueuePublisher<InvestorNeedMoreInvestmentMessage>>();
-
-            _needMoreInfoMailSender
-                .Setup(m => m.SendAsync(It.IsAny<InvestorNeedMoreInvestmentMessage>()))
-                .Returns(() => Task.CompletedTask);
-
             return new TransactionService(
                 _log,
                 _exRateClient.Object,
@@ -127,9 +113,7 @@ namespace Lykke.Job.IcoInvestment.Tests
                 _campaignSettingsRepository.Object,
                 _investorTransactionRepository.Object,
                 _investorRepository.Object,
-                _investmentMailSender.Object,
-                _kycMailSender.Object,
-                _needMoreInfoMailSender.Object);
+                _investmentMailSender.Object);
         }
 
         [Fact]
