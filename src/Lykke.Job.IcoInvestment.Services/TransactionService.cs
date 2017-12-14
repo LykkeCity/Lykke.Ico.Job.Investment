@@ -100,7 +100,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
             await UpdateCampaignAmounts(transaction);
             await UpdateInvestorAmounts(transaction);
-            await SendConfirmationEmail(transaction, msg.Link, investor, settings);
+            await SendConfirmationEmail(transaction, msg.Link, settings);
         }
 
         private async Task<InvestorTransaction> SaveTransaction(TransactionMessage msg, 
@@ -160,10 +160,11 @@ namespace Lykke.Job.IcoInvestment.Services
             return exchangeRate;
         }
 
-        private async Task SendConfirmationEmail(InvestorTransaction tx, string link, IInvestor investor, ICampaignSettings settings)
+        private async Task SendConfirmationEmail(InvestorTransaction tx, string link, ICampaignSettings settings)
         {
             try
             {
+                var investor = await _investorRepository.GetAsync(tx.Email);
                 var asset = "";
 
                 switch (tx.Currency)
