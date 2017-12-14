@@ -17,6 +17,8 @@ using Microsoft.Rest;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using System.Collections.Generic;
+using Lykke.Job.IcoInvestment.Core.Domain;
+using System.Linq;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
@@ -106,10 +108,10 @@ namespace Lykke.Job.IcoInvestment.Services
         {
             var exchangeRate = await GetExchangeRate(msg);
             var avgExchangeRate = Convert.ToDecimal(exchangeRate.AverageRate);
-            var tokenPrice = GetTokenPrice(soldTokensAmount, settings.TokenBasePriceUsd, 
-                settings.StartDateTimeUtc, msg.CreatedUtc);
             var amountUsd = msg.Amount * avgExchangeRate;
-            var amountVld = amountUsd / tokenPrice;
+            var tokenPriceList = TokenPrice.GetPriceList(settings, msg.CreatedUtc, amountUsd, soldTokensAmount);
+            var amountToken = tokenPriceList.Sum(p => p.Count);
+            var avgTokenPrice = tokenPriceList.Average(p => p.Price);
 
             var investorTransaction = new InvestorTransaction
             {
@@ -122,9 +124,10 @@ namespace Lykke.Job.IcoInvestment.Services
                 PayInAddress = msg.PayInAddress,
                 Amount = msg.Amount,
                 AmountUsd = amountUsd,
-                AmountToken = DecimalExtensions.RoundDown(amountVld, settings.TokenDecimals),
+                AmountToken = amountToken,
                 Fee = msg.Fee,
-                TokenPrice = tokenPrice,
+                TokenPrice = avgTokenPrice,
+                TokenPriceContext = tokenPriceList.ToJson(),
                 ExchangeRate = avgExchangeRate,
                 ExchangeRateContext = exchangeRate.Rates.ToJson()
             };
@@ -275,36 +278,6 @@ namespace Lykke.Job.IcoInvestment.Services
                     $"Failed to request KYC for {email}", ex);
 
                 throw;
-            }
-        }
-
-        private decimal GetTokenPrice(decimal currentTotal, decimal tokenBasePrice, 
-            DateTime txDateTimeUtc, DateTime campaignStartDateTimeUtc)
-        {
-            if (currentTotal < 20000000)
-            {
-                return tokenBasePrice * 0.75M;
-            }
-
-            var timeSpan = txDateTimeUtc - campaignStartDateTimeUtc;
-
-            if (timeSpan < TimeSpan.FromDays(1))
-            {
-                return tokenBasePrice * 0.80M;
-            }
-
-            if (timeSpan < TimeSpan.FromDays(7))
-            {
-                return tokenBasePrice * 0.85M;
-            }
-
-            if (timeSpan < TimeSpan.FromDays(7 * 2))
-            {
-                return tokenBasePrice * 0.95M;
-            }
-            else
-            {
-                return tokenBasePrice;
             }
         }
     }

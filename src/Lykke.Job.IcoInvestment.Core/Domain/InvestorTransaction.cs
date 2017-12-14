@@ -18,6 +18,7 @@ namespace Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments
         public decimal AmountToken { get; set; }
         public decimal Fee { get; set; }
         public decimal TokenPrice { get; set; }
+        public string TokenPriceContext { get; set; }
         public decimal ExchangeRate { get; set; }
         public string ExchangeRateContext { get; set; }
     }
