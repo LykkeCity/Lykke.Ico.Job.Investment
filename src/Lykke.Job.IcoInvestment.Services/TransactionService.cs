@@ -57,21 +57,21 @@ namespace Lykke.Job.IcoInvestment.Services
         {
             await _log.WriteInfoAsync(nameof(Process),
                 $"Message: {msg.ToJson()}", 
-                $"New transaction");
+                $"New transaction for {msg.Email}");
 
             var existingTransaction = await _investorTransactionRepository.GetAsync(msg.Email, msg.UniqueId);
             if (existingTransaction != null)
             {
                 await _log.WriteInfoAsync(nameof(Process),
                     $"Message: {msg.ToJson()}",
-                    $"The transaction with UniqueId='{msg.UniqueId}' was already processed");
+                    $"The transaction {msg.UniqueId} was already processed");
                 return;
             }
 
             var investor = await _investorRepository.GetAsync(msg.Email);
             if (investor == null)
             {
-                throw new InvalidOperationException($"Investor with email={msg.Email} was not found");
+                throw new InvalidOperationException($"Investor with email {msg.Email} was not found");
             }
 
             var settings = await _campaignSettingsRepository.GetAsync();
@@ -94,7 +94,7 @@ namespace Lykke.Job.IcoInvestment.Services
             if (soldTokensAmount > settings.TotalTokensAmount)
             {
                 throw new InvalidOperationException($"All tokens were sold out. Sold Tokens={soldTokensAmount}, " +
-                    $"Total Tokens= {settings.TotalTokensAmount}");
+                    $"Total Tokens={settings.TotalTokensAmount}");
             }
 
             var transaction = await SaveTransaction(msg, settings, soldTokensAmount);
@@ -207,7 +207,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
                 await _log.WriteInfoAsync(nameof(SendConfirmationEmail),
                     $"Message: {message.ToJson()}",
-                    $"Transaction confirmation email was sent");
+                    $"Transaction confirmation email was sent to {tx.Email}");
             }
             catch (Exception ex)
             {
@@ -275,7 +275,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
                 await _log.WriteInfoAsync(nameof(RequestKyc),
                     $"Email: {email}",
-                    $"KYC requested");
+                    $"KYC requested for {email}");
 
                 return kycRequestId;
             }
