@@ -32,7 +32,6 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IInvestorTransactionRepository _investorTransactionRepository;
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
-        private readonly string _process = nameof(TransactionService);
 
         public TransactionService(
             ILog log,
@@ -56,13 +55,15 @@ namespace Lykke.Job.IcoInvestment.Services
 
         public async Task Process(TransactionMessage msg)
         {
-            await _log.WriteInfoAsync(_process, nameof(Process),
-                $"New transaction: {msg.ToJson()}");
+            await _log.WriteInfoAsync(nameof(Process),
+                $"Message: {msg.ToJson()}", 
+                $"New transaction");
 
             var existingTransaction = await _investorTransactionRepository.GetAsync(msg.Email, msg.UniqueId);
             if (existingTransaction != null)
             {
-                await _log.WriteInfoAsync(_process, nameof(Process), 
+                await _log.WriteInfoAsync(nameof(Process),
+                    $"Message: {msg.ToJson()}",
                     $"The transaction with UniqueId='{msg.UniqueId}' was already processed");
                 return;
             }
@@ -133,8 +134,9 @@ namespace Lykke.Job.IcoInvestment.Services
             };
 
             await _investorTransactionRepository.SaveAsync(investorTransaction);
-            await _log.WriteInfoAsync(_process, nameof(SaveTransaction), 
-                $"Transaction saved : {investorTransaction.ToJson()}");
+            await _log.WriteInfoAsync(nameof(SaveTransaction),
+                $"Tx: {investorTransaction.ToJson()}",
+                $"Transaction saved");
 
             return investorTransaction;
         }
@@ -203,13 +205,15 @@ namespace Lykke.Job.IcoInvestment.Services
 
                 await _investmentMailSender.SendAsync(message);
 
-                await _log.WriteInfoAsync(_process, nameof(SendConfirmationEmail),
-                    $"Transaction confirmation email was sent: {message.ToJson()}");
+                await _log.WriteInfoAsync(nameof(SendConfirmationEmail),
+                    $"Message: {message.ToJson()}",
+                    $"Transaction confirmation email was sent");
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(_process, nameof(SendConfirmationEmail), 
-                    $"Failed to send confirmation email for transaction: tx={tx.ToJson()}, link={link}", ex);
+                await _log.WriteErrorAsync(nameof(SendConfirmationEmail),
+                    $"Tx: {tx.ToJson()}, TxLink: {link}",
+                    ex);
             }
         }
 
@@ -240,8 +244,8 @@ namespace Lykke.Job.IcoInvestment.Services
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(_process, nameof(IncrementCampaignInfoParam),
-                    $"Failed to update CampaignInfo.{Enum.GetName(typeof(CampaignInfoType), type)}: {value}",
+                await _log.WriteErrorAsync(nameof(IncrementCampaignInfoParam),
+                    $"{Enum.GetName(typeof(CampaignInfoType), type)}: {value}",
                     ex);
             }
         }
@@ -254,8 +258,9 @@ namespace Lykke.Job.IcoInvestment.Services
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(_process, nameof(UpdateInvestorAmounts),
-                    $"Failed to update investor amount: email={tx.ToJson()}", ex);
+                await _log.WriteErrorAsync(nameof(UpdateInvestorAmounts),
+                    $"Tx: {tx.ToJson()}",
+                    ex);
             }
         }
 
@@ -268,15 +273,17 @@ namespace Lykke.Job.IcoInvestment.Services
 
                 await _investorRepository.SaveKycAsync(email, kycRequestId);
 
-                await _log.WriteInfoAsync(_process, nameof(RequestKyc),
-                    $"KYC requested for {email}");
+                await _log.WriteInfoAsync(nameof(RequestKyc),
+                    $"Email: {email}",
+                    $"KYC requested");
 
                 return kycRequestId;
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(_process, nameof(RequestKyc),
-                    $"Failed to request KYC for {email}", ex);
+                await _log.WriteErrorAsync(nameof(RequestKyc), 
+                    $"Email: {email}", 
+                    ex);
 
                 throw;
             }

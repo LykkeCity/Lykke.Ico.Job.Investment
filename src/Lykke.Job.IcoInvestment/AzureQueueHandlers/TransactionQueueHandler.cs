@@ -29,8 +29,10 @@ namespace Lykke.Job.IcoInvestment.AzureQueueHandlers
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(nameof(TransactionQueueHandler), nameof(HandleTransactionMessage),
-                    $"Failed to process message: {msg.ToJson()}", ex);
+                await _log.WriteErrorAsync(nameof(HandleTransactionMessage),
+                    $"Message: {msg.ToJson()}",
+                    ex);
+
                 throw;
             }
         }
