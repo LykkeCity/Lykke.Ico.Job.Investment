@@ -56,14 +56,13 @@ namespace Lykke.Job.IcoInvestment.Services
         public async Task Process(TransactionMessage msg)
         {
             await _log.WriteInfoAsync(nameof(Process),
-                $"Message: {msg.ToJson()}", 
-                $"New transaction for {msg.Email}");
+                $"msg: {msg.ToJson()}", $"New transaction");
 
             var existingTransaction = await _investorTransactionRepository.GetAsync(msg.Email, msg.UniqueId);
             if (existingTransaction != null)
             {
                 await _log.WriteInfoAsync(nameof(Process),
-                    $"Message: {msg.ToJson()}",
+                    $"existingTransaction: {existingTransaction.ToJson()}",
                     $"The transaction {msg.UniqueId} was already processed");
                 return;
             }
@@ -114,7 +113,7 @@ namespace Lykke.Job.IcoInvestment.Services
             var amountToken = tokenPriceList.Sum(p => p.Count);
             var avgTokenPrice = tokenPriceList.Average(p => p.Price);
 
-            var investorTransaction = new InvestorTransaction
+            var transaction = new InvestorTransaction
             {
                 Email = msg.Email,
                 UniqueId = msg.UniqueId,
@@ -133,12 +132,13 @@ namespace Lykke.Job.IcoInvestment.Services
                 ExchangeRateContext = exchangeRate.Rates.ToJson()
             };
 
-            await _investorTransactionRepository.SaveAsync(investorTransaction);
             await _log.WriteInfoAsync(nameof(SaveTransaction),
-                $"Tx: {investorTransaction.ToJson()}",
-                $"Transaction saved");
+                $"transaction: {transaction.ToJson()}",
+                $"Save transaction");
 
-            return investorTransaction;
+            await _investorTransactionRepository.SaveAsync(transaction);
+
+            return transaction;
         }
 
         private async Task<AverageRateResponse> GetExchangeRate(TransactionMessage msg)
@@ -199,15 +199,17 @@ namespace Lykke.Job.IcoInvestment.Services
                 if (investor.KycRequestedUtc == null && 
                     investor.AmountUsd >= settings.MinInvestAmountUsd)
                 {
+                    var kycId = await SaveInvestorKyc(investor.Email);
+
                     message.KycRequired = true;
-                    message.KycLink = await RequestKyc(investor.Email);
+                    message.KycLink = kycId;
                 }
 
-                await _investmentMailSender.SendAsync(message);
-
                 await _log.WriteInfoAsync(nameof(SendConfirmationEmail),
-                    $"Message: {message.ToJson()}",
-                    $"Transaction confirmation email was sent to {tx.Email}");
+                    $"message: {message.ToJson()}",
+                    $"Send transaction confirmation message to queue");
+
+                await _investmentMailSender.SendAsync(message);
             }
             catch (Exception ex)
             {
@@ -264,24 +266,23 @@ namespace Lykke.Job.IcoInvestment.Services
             }
         }
 
-        private async Task<string> RequestKyc(string email)
+        private async Task<string> SaveInvestorKyc(string email)
         {
             try
             {
-                // TODO: get actual KYC identitfier from provider
                 var kycRequestId = Guid.NewGuid().ToString();
 
-                await _investorRepository.SaveKycAsync(email, kycRequestId);
+                await _log.WriteInfoAsync(nameof(SaveInvestorKyc),
+                    $"email: {email}, kycRequestId: {kycRequestId}",
+                    $"Save KYC request info");
 
-                await _log.WriteInfoAsync(nameof(RequestKyc),
-                    $"Email: {email}",
-                    $"KYC requested for {email}");
+                await _investorRepository.SaveKycAsync(email, kycRequestId);
 
                 return kycRequestId;
             }
             catch (Exception ex)
             {
-                await _log.WriteErrorAsync(nameof(RequestKyc), 
+                await _log.WriteErrorAsync(nameof(SaveInvestorKyc), 
                     $"Email: {email}", 
                     ex);
 
