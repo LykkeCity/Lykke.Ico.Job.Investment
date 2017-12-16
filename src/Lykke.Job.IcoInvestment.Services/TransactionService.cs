@@ -113,7 +113,7 @@ namespace Lykke.Job.IcoInvestment.Services
             var amountToken = tokenPriceList.Sum(p => p.Count);
             var avgTokenPrice = tokenPriceList.Average(p => p.Price);
 
-            var transaction = new InvestorTransaction
+            var tx = new InvestorTransaction
             {
                 Email = msg.Email,
                 UniqueId = msg.UniqueId,
@@ -133,12 +133,12 @@ namespace Lykke.Job.IcoInvestment.Services
             };
 
             await _log.WriteInfoAsync(nameof(SaveTransaction),
-                $"transaction: {transaction.ToJson()}",
+                $"tx: {tx.ToJson()}",
                 $"Save transaction");
 
-            await _investorTransactionRepository.SaveAsync(transaction);
+            await _investorTransactionRepository.SaveAsync(tx);
 
-            return transaction;
+            return tx;
         }
 
         private async Task<AverageRateResponse> GetExchangeRate(TransactionMessage msg)
