@@ -8,7 +8,6 @@ using Lykke.Ico.Core.Queues.Transactions;
 using Lykke.Ico.Core.Repositories.CampaignInfo;
 using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
-using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
 using Lykke.Job.IcoInvestment.Services;
 using Lykke.Service.IcoExRate.Client;
 using Lykke.Service.IcoExRate.Client.AutorestClient.Models;
@@ -49,12 +48,16 @@ namespace Lykke.Job.IcoInvestment.Tests
 
             _campaignSettings = new CampaignSettings
             {
-                StartDateTimeUtc = DateTime.UtcNow.AddDays(-1),
-                EndDateTimeUtc = DateTime.UtcNow.AddDays(1),
+                PreSaleStartDateTimeUtc = DateTime.UtcNow.AddDays(-15),
+                PreSaleEndDateTimeUtc = DateTime.UtcNow,
+                PreSaleTotalTokensAmount = 100000000,
+                CrowdSaleStartDateTimeUtc = DateTime.UtcNow,
+                CrowdSaleEndDateTimeUtc = DateTime.UtcNow.AddDays(21),
+                CrowdSaleTotalTokensAmount = 360000000,
                 TokenDecimals = 4,
                 MinInvestAmountUsd = 1000,
                 TokenBasePriceUsd = 0.064M,
-                TotalTokensAmount = 1000000000
+                TotalTokensAmount = 460000000
             };
 
             _campaignSettingsRepository = new Mock<ICampaignSettingsRepository>();
@@ -163,26 +166,143 @@ namespace Lykke.Job.IcoInvestment.Tests
             Assert.Equal(testAmountUsd, _usdAmount);
         }
 
-        // TODO: should also discard when terms violated or exchange rate not found
         [Fact]
-        public void ShouldDiscardMessage()
+        public void ShouldThrowExceptionWhenCampainSettingsNull()
         {
             // Arrange
-            var svc = Init(null);
             var message = new TransactionMessage
             {
-                Amount = 0M,
-                BlockId = "",
-                CreatedUtc = DateTimeOffset.MinValue.UtcDateTime,
-                Currency = CurrencyType.Bitcoin,
-                PayInAddress = "test@test.test",
-                Link = "",
-                TransactionId = "",
-                UniqueId = ""
+                Email = "test@test.test",
+                CreatedUtc = DateTime.Now.ToUniversalTime(),
+                UniqueId = "111"
             };
 
+            var svc = Init(message.Email, Decimal.ToDouble(1M));
+
+            _campaignSettingsRepository
+                .Setup(m => m.GetAsync())
+                .Returns(() => Task.FromResult<ICampaignSettings>(null));
+
             // Act
-            Assert.Throws<AggregateException>(() => svc.Process(message).Wait());
+            var ex = Assert.Throws<AggregateException>(() => svc.Process(message).Wait());
+
+            Assert.Contains("Campaign settings", ex.Message);
+        }
+
+        [Fact]
+        public async void ShouldDoIgnoreAlreadySavedTranscation()
+        {
+            // Arrange
+            var message = new TransactionMessage
+            {
+                Email = "test@test.test",
+                CreatedUtc = DateTime.Now.ToUniversalTime(),
+                UniqueId = "111"
+            };
+
+            var svc = Init(message.Email, Decimal.ToDouble(1M));
+
+            _investorTransactionRepository
+                .Setup(m => m.GetAsync(
+                    It.Is<string>(v => v == message.Email),
+                    It.Is<string>(v => v == message.UniqueId)))
+                .Returns(() => Task.FromResult(_investorTransaction));            
+
+            // Act
+            await svc.Process(message);
+
+            // Assert
+            _investorTransactionRepository.Verify(m => m.GetAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>()));
+        }
+
+        [Fact]
+        public void ShouldThrowExceptionWhenInvestorNotFound()
+        {
+            // Arrange
+            var message = new TransactionMessage
+            {
+                Email = "test@test.test",
+                CreatedUtc = DateTime.Now.ToUniversalTime(),
+                UniqueId = "111"
+            };
+
+            var svc = Init(message.Email, Decimal.ToDouble(1M));
+
+            _investorRepository
+                .Setup(m => m.GetAsync(It.Is<string>(v => v == message.Email)))
+                .Returns(() => Task.FromResult<IInvestor>(null));
+
+            // Act
+            var ex = Assert.Throws<AggregateException>(() => svc.Process(message).Wait());
+
+            Assert.Contains("Investor with email", ex.Message);
+        }
+
+        [Fact]
+        public void ShouldThrowExceptionWhenTxOutOfDates()
+        {
+            // Arrange
+            var message = new TransactionMessage
+            {
+                Email = "test@test.test",
+                CreatedUtc = DateTime.Now.AddDays(-20).ToUniversalTime(),
+                UniqueId = "111"
+            };
+
+            var svc = Init(message.Email, Decimal.ToDouble(1M));
+
+            // Act
+            var ex = Assert.Throws<AggregateException>(() => svc.Process(message).Wait());
+
+            Assert.Contains("Transaction is out of campaign dates", ex.Message);
+        }
+
+        [Fact]
+        public void ShouldThrowExceptionWhenWhenAllPresalesTokensSoldOut()
+        {
+            // Arrange
+            var message = new TransactionMessage
+            {
+                Email = "test@test.test",
+                CreatedUtc = DateTime.Now.AddDays(-10).ToUniversalTime(),
+                UniqueId = "111"
+            };
+
+            var svc = Init(message.Email, Decimal.ToDouble(1M));
+
+            _campaignInfoRepository
+                .Setup(m => m.GetValueAsync(It.Is<CampaignInfoType>(t => t == CampaignInfoType.AmountInvestedToken)))
+                .Returns(() => Task.FromResult("200000000"));
+
+            // Act
+            var ex = Assert.Throws<AggregateException>(() => svc.Process(message).Wait());
+
+            Assert.Contains("All presale tokens were sold out", ex.Message);
+        }
+
+        [Fact]
+        public void ShouldThrowExceptionWhenWhenAllTokensSoldOut()
+        {
+            // Arrange
+            var message = new TransactionMessage
+            {
+                Email = "test@test.test",
+                CreatedUtc = DateTime.Now.AddDays(10).ToUniversalTime(),
+                UniqueId = "111"
+            };
+
+            var svc = Init(message.Email, Decimal.ToDouble(1M));
+
+            _campaignInfoRepository
+                .Setup(m => m.GetValueAsync(It.Is<CampaignInfoType>(t => t == CampaignInfoType.AmountInvestedToken)))
+                .Returns(() => Task.FromResult("600000000"));
+
+            // Act
+            var ex = Assert.Throws<AggregateException>(() => svc.Process(message).Wait());
+
+            Assert.Contains("All tokens were sold out", ex.Message);
         }
     }
 }

@@ -1,5 +1,8 @@
 ﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using Microsoft.Rest;
 using Common;
 using Common.Log;
 using Lykke.Ico.Core;
@@ -13,12 +16,10 @@ using Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Service.IcoExRate.Client;
 using Lykke.Service.IcoExRate.Client.AutorestClient.Models;
-using Microsoft.Rest;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
-using System.Collections.Generic;
 using Lykke.Job.IcoInvestment.Core.Domain;
-using System.Linq;
+using Lykke.Job.IcoInvestment.Core.Extensions;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
@@ -58,13 +59,52 @@ namespace Lykke.Job.IcoInvestment.Services
             await _log.WriteInfoAsync(nameof(Process),
                 $"msg: {msg.ToJson()}", $"New transaction");
 
+            var settings = await GetCampaignSettings();
+            var soldTokensAmount = await GetSoldTokensAmount();
+
+            var validTx = await IsTxValid(msg, settings, soldTokensAmount);
+            if (validTx)
+            {
+                var transaction = await SaveTransaction(msg, settings, soldTokensAmount);
+
+                await UpdateCampaignAmounts(transaction);
+                await UpdateInvestorAmounts(transaction);
+                await SendConfirmationEmail(transaction, msg.Link, settings);
+            }
+        }
+
+        private async Task<ICampaignSettings> GetCampaignSettings()
+        {
+            var settings = await _campaignSettingsRepository.GetAsync();
+            if (settings == null)
+            {
+                throw new InvalidOperationException($"Campaign settings was not found");
+            }
+
+            return settings;
+        }
+
+        private async Task<decimal> GetSoldTokensAmount()
+        {
+            var soldTokensAmountStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedToken);
+            if (!Decimal.TryParse(soldTokensAmountStr, out var soldTokensAmount))
+            {
+                soldTokensAmount = 0;
+            }
+
+            return soldTokensAmount;
+        }
+
+        private async Task<bool> IsTxValid(TransactionMessage msg, ICampaignSettings settings, decimal soldTokensAmount)
+        {
             var existingTransaction = await _investorTransactionRepository.GetAsync(msg.Email, msg.UniqueId);
             if (existingTransaction != null)
             {
                 await _log.WriteInfoAsync(nameof(Process),
-                    $"existingTransaction: {existingTransaction.ToJson()}",
-                    $"The transaction {msg.UniqueId} was already processed");
-                return;
+                    $"emai: {msg.Email}, uniqueId: {msg.UniqueId}, existingTransaction: {existingTransaction.ToJson()}",
+                    $"The transaction was already processed");
+
+                return false;
             }
 
             var investor = await _investorRepository.GetAsync(msg.Email);
@@ -73,34 +113,26 @@ namespace Lykke.Job.IcoInvestment.Services
                 throw new InvalidOperationException($"Investor with email {msg.Email} was not found");
             }
 
-            var settings = await _campaignSettingsRepository.GetAsync();
-            if (settings == null)
+            var preSalePhase = settings.IsPreSale(msg.CreatedUtc);
+            var crowdSalePhase = settings.IsCrowdSale(msg.CreatedUtc);
+
+            if (!preSalePhase && !crowdSalePhase)
             {
-                throw new InvalidOperationException($"Campaign settings was not found");
+                throw new InvalidOperationException($"Transaction is out of campaign dates. " +
+                    $"Transaction: {msg.CreatedUtc}, Settings: {settings.ToJson()}");
+            }
+            if (preSalePhase && soldTokensAmount > settings.PreSaleTotalTokensAmount)
+            {
+                throw new InvalidOperationException($"All presale tokens were sold out. " +
+                    $"Sold Tokens:{soldTokensAmount}, Presale Total Tokens:{settings.PreSaleTotalTokensAmount}");
+            }
+            if (crowdSalePhase && soldTokensAmount > settings.TotalTokensAmount)
+            {
+                throw new InvalidOperationException($"All tokens were sold out. " +
+                    $"Sold Tokens:{soldTokensAmount}, Total Tokens:{settings.TotalTokensAmount}");
             }
 
-            if (msg.CreatedUtc < settings.StartDateTimeUtc || msg.CreatedUtc > settings.EndDateTimeUtc)
-            {
-                throw new InvalidOperationException($"Transaction date {msg.CreatedUtc} is out of campaign start/end dates: " +
-                    $"{settings.StartDateTimeUtc} - {settings.EndDateTimeUtc}");
-            }
-
-            var soldTokensAmountStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedToken);
-            if (!Decimal.TryParse(soldTokensAmountStr, out var soldTokensAmount))
-            {
-                soldTokensAmount = 0;
-            }
-            if (soldTokensAmount > settings.TotalTokensAmount)
-            {
-                throw new InvalidOperationException($"All tokens were sold out. Sold Tokens={soldTokensAmount}, " +
-                    $"Total Tokens={settings.TotalTokensAmount}");
-            }
-
-            var transaction = await SaveTransaction(msg, settings, soldTokensAmount);
-
-            await UpdateCampaignAmounts(transaction);
-            await UpdateInvestorAmounts(transaction);
-            await SendConfirmationEmail(transaction, msg.Link, settings);
+            return true;
         }
 
         private async Task<InvestorTransaction> SaveTransaction(TransactionMessage msg, 
@@ -111,7 +143,7 @@ namespace Lykke.Job.IcoInvestment.Services
             var amountUsd = msg.Amount * avgExchangeRate;
             var tokenPriceList = TokenPrice.GetPriceList(settings, msg.CreatedUtc, amountUsd, soldTokensAmount);
             var amountToken = tokenPriceList.Sum(p => p.Count);
-            var avgTokenPrice = tokenPriceList.Average(p => p.Price);
+            var tokenPrice = (amountUsd / amountToken).RoundDown(settings.TokenDecimals);
 
             var tx = new InvestorTransaction
             {
@@ -126,15 +158,14 @@ namespace Lykke.Job.IcoInvestment.Services
                 AmountUsd = amountUsd,
                 AmountToken = amountToken,
                 Fee = msg.Fee,
-                TokenPrice = avgTokenPrice,
+                TokenPrice = tokenPrice,
                 TokenPriceContext = tokenPriceList.ToJson(),
                 ExchangeRate = avgExchangeRate,
                 ExchangeRateContext = exchangeRate.Rates.ToJson()
             };
 
             await _log.WriteInfoAsync(nameof(SaveTransaction),
-                $"tx: {tx.ToJson()}",
-                $"Save transaction");
+                $"tx: {tx.ToJson()}", $"Save transaction");
 
             await _investorTransactionRepository.SaveAsync(tx);
 
