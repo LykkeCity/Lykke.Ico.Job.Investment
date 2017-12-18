@@ -220,6 +220,8 @@ namespace Lykke.Job.IcoInvestment
                 aggregateLogger.AddLog(azureStorageLogger);
             }
 
+            aggregateLogger.AddIcoSlackLog(slackService);
+
             return aggregateLogger;
         }
     }
