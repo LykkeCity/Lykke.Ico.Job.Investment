@@ -20,6 +20,7 @@ using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Job.IcoInvestment.Core.Domain;
 using Lykke.Job.IcoInvestment.Core.Extensions;
+using Lykke.Ico.Core.Repositories.InvestorRefund;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
@@ -31,6 +32,7 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly ICampaignInfoRepository _campaignInfoRepository;
         private readonly ICampaignSettingsRepository _campaignSettingsRepository;
         private readonly IInvestorTransactionRepository _investorTransactionRepository;
+        private readonly IInvestorRefundRepository _investorRefundRepository;
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
 
@@ -41,6 +43,7 @@ namespace Lykke.Job.IcoInvestment.Services
             ICampaignInfoRepository campaignInfoRepository,
             ICampaignSettingsRepository campaignSettingsRepository,
             IInvestorTransactionRepository investorTransactionRepository,
+            IInvestorRefundRepository investorRefundRepository,
             IInvestorRepository investorRepository,
             IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender)
         {
@@ -50,6 +53,7 @@ namespace Lykke.Job.IcoInvestment.Services
             _campaignInfoRepository = campaignInfoRepository;
             _campaignSettingsRepository = campaignSettingsRepository;
             _investorTransactionRepository = investorTransactionRepository;
+            _investorRefundRepository = investorRefundRepository;
             _investorRepository = investorRepository;
             _investmentMailSender = investmentMailSender;
         }
@@ -58,6 +62,14 @@ namespace Lykke.Job.IcoInvestment.Services
         {
             await _log.WriteInfoAsync(nameof(Process),
                 $"msg: {msg.ToJson()}", $"New transaction");
+
+            await ValidateMessage(msg);
+
+            var txProcessed = await WasTxAlreadyProcessed(msg);
+            if (txProcessed)
+            {
+                return;
+            }
 
             var settings = await GetCampaignSettings();
             var soldTokensAmount = await GetSoldTokensAmount();
@@ -71,6 +83,40 @@ namespace Lykke.Job.IcoInvestment.Services
                 await UpdateInvestorAmounts(transaction);
                 await SendConfirmationEmail(transaction, msg.Link, settings);
             }
+        }
+
+        private async Task ValidateMessage(TransactionMessage msg)
+        {
+            if (string.IsNullOrEmpty(msg.UniqueId))
+            {
+                throw new InvalidOperationException($"UniqueId can not be empty");
+            }
+
+            if (string.IsNullOrEmpty(msg.Email))
+            {
+                throw new InvalidOperationException($"Email can not be empty");
+            }
+
+            var investor = await _investorRepository.GetAsync(msg.Email);
+            if (investor == null)
+            {
+                throw new InvalidOperationException($"Investor with email {msg.Email} was not found");
+            }            
+        }
+
+        private async Task<bool> WasTxAlreadyProcessed(TransactionMessage msg)
+        {
+            var existingTransaction = await _investorTransactionRepository.GetAsync(msg.Email, msg.UniqueId);
+            if (existingTransaction != null)
+            {
+                await _log.WriteInfoAsync(nameof(Process),
+                    $"emai: {msg.Email}, uniqueId: {msg.UniqueId}, existingTransaction: {existingTransaction.ToJson()}",
+                    $"The transaction was already processed");
+
+                return true;
+            }
+
+            return false;
         }
 
         private async Task<ICampaignSettings> GetCampaignSettings()
@@ -97,39 +143,45 @@ namespace Lykke.Job.IcoInvestment.Services
 
         private async Task<bool> IsTxValid(TransactionMessage msg, ICampaignSettings settings, decimal soldTokensAmount)
         {
-            var existingTransaction = await _investorTransactionRepository.GetAsync(msg.Email, msg.UniqueId);
-            if (existingTransaction != null)
-            {
-                await _log.WriteInfoAsync(nameof(Process),
-                    $"emai: {msg.Email}, uniqueId: {msg.UniqueId}, existingTransaction: {existingTransaction.ToJson()}",
-                    $"The transaction was already processed");
-
-                return false;
-            }
-
-            var investor = await _investorRepository.GetAsync(msg.Email);
-            if (investor == null)
-            {
-                throw new InvalidOperationException($"Investor with email {msg.Email} was not found");
-            }
-
             var preSalePhase = settings.IsPreSale(msg.CreatedUtc);
             var crowdSalePhase = settings.IsCrowdSale(msg.CreatedUtc);
 
             if (!preSalePhase && !crowdSalePhase)
             {
-                throw new InvalidOperationException($"Transaction is out of campaign dates. " +
-                    $"Transaction: {msg.CreatedUtc}, Settings: {settings.ToJson()}");
+                await _log.WriteInfoAsync(nameof(Process),
+                    $"msg: {msg}, settings: {settings.ToJson()}",
+                    $"Transaction is out of campaign dates");
+
+                await _investorRefundRepository.SaveAsync(msg.Email, 
+                    InvestorRefundReason.OutOfDates, 
+                    msg.ToJson());
+
+                return false;
             }
             if (preSalePhase && soldTokensAmount > settings.PreSaleTotalTokensAmount)
             {
-                throw new InvalidOperationException($"All presale tokens were sold out. " +
-                    $"Sold Tokens:{soldTokensAmount}, Presale Total Tokens:{settings.PreSaleTotalTokensAmount}");
+                await _log.WriteInfoAsync(nameof(Process),
+                    $"soldTokensAmount: {soldTokensAmount}, settings: {settings.ToJson()}, msg: {msg.ToJson()}",
+                    $"All presale tokens were sold out");
+
+                await _investorRefundRepository.SaveAsync(msg.Email, 
+                    InvestorRefundReason.PreSaleTokensSoldOut, 
+                    msg.ToJson());
+
+                return false;
             }
-            if (crowdSalePhase && soldTokensAmount > settings.TotalTokensAmount)
+            if (crowdSalePhase && soldTokensAmount > settings.GetTotalTokensAmount())
             {
-                throw new InvalidOperationException($"All tokens were sold out. " +
-                    $"Sold Tokens:{soldTokensAmount}, Total Tokens:{settings.TotalTokensAmount}");
+                await _log.WriteInfoAsync(nameof(Process),
+                    $"soldTokensAmount: {soldTokensAmount}, totalTokensAmount: {settings.GetTotalTokensAmount()}, " +
+                    $"settings: {settings.ToJson()}, msg: {msg.ToJson()}",
+                    $"All tokens were sold out");
+
+                await _investorRefundRepository.SaveAsync(msg.Email,
+                    InvestorRefundReason.TokensSoldOut,
+                    msg.ToJson());
+
+                return false;
             }
 
             return true;

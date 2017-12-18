@@ -7,6 +7,7 @@ using Lykke.Ico.Core.Repositories.CampaignInfo;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
+using Lykke.Ico.Core.Repositories.InvestorRefund;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
@@ -73,6 +74,10 @@ namespace Lykke.Job.IcoInvestment.Modules
             builder.RegisterType<InvestorTransactionRepository>()
                 .As<IInvestorTransactionRepository>()
                 .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
+
+            builder.RegisterType<InvestorRefundRepository>()
+                            .As<IInvestorRefundRepository>()
+                            .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
 
             builder.RegisterType<QueuePublisher<InvestorNewTransactionMessage>>()
                 .As<IQueuePublisher<InvestorNewTransactionMessage>>()
