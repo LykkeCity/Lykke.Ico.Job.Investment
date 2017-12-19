@@ -7,10 +7,11 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
 {
     public class TokenPrice
     {
-        public TokenPrice(decimal count, decimal price, string Phase)
+        public TokenPrice(decimal count, decimal price, string phase)
         {
             Count = count;
             Price = price;
+            Phase = phase;
         }
 
         public decimal Count { get; }
