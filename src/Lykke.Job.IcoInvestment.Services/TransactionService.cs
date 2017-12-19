@@ -19,7 +19,6 @@ using Lykke.Service.IcoExRate.Client.AutorestClient.Models;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Job.IcoInvestment.Core.Domain;
-using Lykke.Job.IcoInvestment.Core.Extensions;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
 
 namespace Lykke.Job.IcoInvestment.Services

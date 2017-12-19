@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
-using Lykke.Job.IcoInvestment.Core.Extensions;
+using Lykke.Ico.Core;
 
 namespace Lykke.Job.IcoInvestment.Core.Domain
 {
@@ -21,86 +21,41 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
         public static IList<TokenPrice> GetPriceList(ICampaignSettings campaignSettings, DateTime txDateTimeUtc,
             decimal amountUsd, decimal currentTotal)
         {
-            var isPreSale = campaignSettings.IsPreSale(txDateTimeUtc);
-            var isIsCrowdSale = campaignSettings.IsCrowdSale(txDateTimeUtc);
-
-            if (isPreSale)
+            var tokenInfo = campaignSettings.GetTokenInfo(currentTotal, txDateTimeUtc);
+            if (tokenInfo == null)
             {
-                var priceList = new List<TokenPrice>();
-                var price = campaignSettings.TokenBasePriceUsd * 0.75M;
-                var count = DecimalExtensions.RoundDown(amountUsd / price, campaignSettings.TokenDecimals);
-
-                priceList.Add(new TokenPrice(count, price, "PreSale"));
-
-                return priceList;
+                return null;
             }
 
-            if (isIsCrowdSale)
+            var priceList = new List<TokenPrice>();
+            var tokenPhase = Enum.GetName(typeof(TokenPricePhase), tokenInfo.Phase);
+            var tokens = DecimalExtensions.RoundDown(amountUsd / tokenInfo.Price, campaignSettings.TokenDecimals);
+
+            if (tokenInfo.Phase == TokenPricePhase.CrowdSaleInitial)
             {
-                var priceList = new List<TokenPrice>();
-                var countDown = 20_000_000M - currentTotal;
-
-                TokenPrice priceByDate(decimal amount)
+                var tokensBelow = Consts.CrowdSale.InitialAmount - currentTotal;
+                if (tokensBelow > 0M)
                 {
-                    var price = 0M;
-                    var phase = "CrowdSale";
-
-                    var timeSpan = txDateTimeUtc - campaignSettings.CrowdSaleStartDateTimeUtc;
-
-                    if (timeSpan < TimeSpan.FromDays(1))
+                    if (tokens > tokensBelow)
                     {
-                        price = campaignSettings.TokenBasePriceUsd * 0.80M;
-                        phase = $"{phase}-FirstDay";
-                    }
-                    else if (timeSpan < TimeSpan.FromDays(7))
-                    {
-                        price = campaignSettings.TokenBasePriceUsd * 0.85M;
-                        phase = $"{phase}-FirstWeek";
-                    }
-                    else if (timeSpan < TimeSpan.FromDays(7 * 2))
-                    {
-                        price = campaignSettings.TokenBasePriceUsd * 0.90M;
-                        phase = $"{phase}-SeckondWeek";
-                    }
-                    else
-                    {
-                        price = campaignSettings.TokenBasePriceUsd;
-                        phase = $"{phase}-FinalWeek";
-                    }
+                        // tokens below threshold
+                        priceList.Add(new TokenPrice(tokensBelow, tokenInfo.Price, tokenPhase)); 
 
-                    var count = DecimalExtensions.RoundDown(amount / price, campaignSettings.TokenDecimals);
+                        // tokens above threshold
+                        var amountUsdAbove = amountUsd - (tokensBelow * tokenInfo.Price);
+                        var priceAbove = campaignSettings.GetTokenPrice(TokenPricePhase.CrowdSaleFirstDay);
+                        var tokensAbove = DecimalExtensions.RoundDown(amountUsdAbove / priceAbove, campaignSettings.TokenDecimals);
 
-                    return new TokenPrice(count, price, phase);
-                };
+                        priceList.Add(new TokenPrice(tokensAbove, priceAbove, nameof(TokenPricePhase.CrowdSaleFirstDay)));
 
-                if (countDown > 0M)
-                {
-                    var price = campaignSettings.TokenBasePriceUsd * 0.75M;
-                    var count = DecimalExtensions.RoundDown(amountUsd / price, campaignSettings.TokenDecimals);
-                    var phase = "CrowdSale-First-20_000_000";
-
-                    if (count > countDown)
-                    {
-                        count = countDown; // count of tokens below threshold
-                        amountUsd -= countDown * price; // rest of amount after purchasing tokens below threshold
-
-                        priceList.Add(new TokenPrice(count, price, phase)); // price and count of tokens below threshold
-                        priceList.Add(priceByDate(amountUsd)); // price and count of tokens above threshold
-                    }
-                    else
-                    {
-                        priceList.Add(new TokenPrice(count, price, phase)); // the whole purchase is below threshold
+                        return priceList;
                     }
                 }
-                else
-                {
-                    priceList.Add(priceByDate(amountUsd));
-                }
-
-                return priceList;
             }
 
-            return null;
+            priceList.Add(new TokenPrice(tokens, tokenInfo.Price, tokenPhase));
+
+            return priceList;
         }
     }
 }
