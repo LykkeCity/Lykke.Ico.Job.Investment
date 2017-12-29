@@ -20,6 +20,7 @@ using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Job.IcoInvestment.Core.Domain;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
+using Lykke.Ico.Core.Helpers;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
@@ -34,6 +35,7 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IInvestorRefundRepository _investorRefundRepository;
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
+        private readonly IEncryptionService _encryptionService;
 
         public TransactionService(
             ILog log,
@@ -44,7 +46,8 @@ namespace Lykke.Job.IcoInvestment.Services
             IInvestorTransactionRepository investorTransactionRepository,
             IInvestorRefundRepository investorRefundRepository,
             IInvestorRepository investorRepository,
-            IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender)
+            IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender,
+            IEncryptionService encryptionService)
         {
             _log = log;
             _exRateClient = exRateClient;
@@ -55,6 +58,7 @@ namespace Lykke.Job.IcoInvestment.Services
             _investorRefundRepository = investorRefundRepository;
             _investorRepository = investorRepository;
             _investmentMailSender = investmentMailSender;
+            _encryptionService = encryptionService;
         }
 
         public async Task Process(TransactionMessage msg)
@@ -283,8 +287,12 @@ namespace Lykke.Job.IcoInvestment.Services
                 {
                     var kycId = await SaveInvestorKyc(investor.Email);
 
+                    var kycMessage = new { email = tx.Email, kycid = kycId };
+                    var kycEncryptedMessage = _encryptionService.Encrypt(kycMessage.ToJson());
+                    var kycLink = $"https://cbfs-ico-service.com/#/register?message={kycEncryptedMessage}";
+
                     message.KycRequired = true;
-                    message.KycLink = kycId;
+                    message.KycLink = kycLink;
                 }
 
                 await _log.WriteInfoAsync(nameof(SendConfirmationEmail),

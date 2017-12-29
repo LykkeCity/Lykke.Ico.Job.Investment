@@ -6,7 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Lykke.Common" Version="3.0.2" />
     <PackageReference Include="Lykke.Service.IcoExRate.Client" Version="1.0.5-beta" />
   </ItemGroup>
 

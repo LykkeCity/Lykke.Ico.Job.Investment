@@ -87,6 +87,12 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<ITransactionService>()
                 .SingleInstance();
 
+            builder.RegisterType<EncryptionService>()
+                .As<IEncryptionService>()
+                .WithParameter("key", "E546C8DF278CD5931069B522E695D4F2")
+                .WithParameter("iv", "1234567890123456")
+                .SingleInstance();
+
             RegisterAzureQueueHandlers(builder);
         }
 
