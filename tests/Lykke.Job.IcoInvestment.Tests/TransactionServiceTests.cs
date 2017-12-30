@@ -19,7 +19,7 @@ using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
 using Common;
-using Lykke.Job.IcoInvestment.Core.Services;
+using Lykke.Ico.Core.Services;
 
 namespace Lykke.Job.IcoInvestment.Tests
 {
@@ -37,7 +37,7 @@ namespace Lykke.Job.IcoInvestment.Tests
         private ICampaignSettings _campaignSettings;
         private IInvestor _investor;
         private IInvestorTransaction _investorTransaction;
-        private IEncryptionService _encryptionService;
+        private IUrlEncryptionService _urlEncryptionService;
         private decimal _usdAmount = decimal.Zero;
 
         private TransactionService Init(string investorEmail = "test@test.test", double exchangeRate = 1.0)
@@ -118,7 +118,7 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Setup(m => m.SendAsync(It.IsAny<InvestorNewTransactionMessage>()))
                 .Returns(() => Task.CompletedTask);
 
-            _encryptionService = new EncryptionService("E546C8DF278CD5931069B522E695D4F2", "1234567890123456");
+            _urlEncryptionService = new UrlEncryptionService("E546C8DF278CD5931069B522E695D4F2", "1234567890123456");
 
             return new TransactionService(
                 _log,
@@ -130,7 +130,7 @@ namespace Lykke.Job.IcoInvestment.Tests
                 _investorRefundRepository.Object,
                 _investorRepository.Object,
                 _investmentMailSender.Object,
-                _encryptionService);
+                _urlEncryptionService);
         }
 
         [Fact]

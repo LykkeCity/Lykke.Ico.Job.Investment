@@ -9,6 +9,7 @@ using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
+using Lykke.Ico.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
 using Lykke.Job.IcoInvestment.Services;
@@ -87,10 +88,10 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<ITransactionService>()
                 .SingleInstance();
 
-            builder.RegisterType<EncryptionService>()
-                .As<IEncryptionService>()
-                .WithParameter("key", "E546C8DF278CD5931069B522E695D4F2")
-                .WithParameter("iv", "1234567890123456")
+            builder.RegisterType<UrlEncryptionService>()
+                .As<IUrlEncryptionService>()
+                .WithParameter("key", _settings.KycServiceEncriptionKey)
+                .WithParameter("iv", _settings.KycServiceEncriptionIv)
                 .SingleInstance();
 
             RegisterAzureQueueHandlers(builder);
