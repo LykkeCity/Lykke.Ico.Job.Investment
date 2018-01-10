@@ -283,14 +283,15 @@ namespace Lykke.Job.IcoInvestment.Services
                     message.MinAmount = settings.MinInvestAmountUsd;
                 }
 
-                if (investor.KycRequestedUtc == null && 
+                if (settings.KycEnableRequestSending &&
+                    investor.KycRequestedUtc == null && 
                     investor.AmountUsd >= settings.MinInvestAmountUsd)
                 {
                     var kycId = await SaveInvestorKyc(investor.Email);
 
                     var kycMessage = new { campaign="", email = tx.Email, kycid = kycId };
                     var kycEncryptedMessage = _urlEncryptionService.Encrypt(kycMessage.ToJson());
-                    var kycLink = $"https://cbfs-ico-service.com/#/register?message={kycEncryptedMessage}";
+                    var kycLink = settings.KycLinkTemplate.Replace("{kycEncryptedMessage}", kycEncryptedMessage); //https://cbfs-ico-service.com/#/register?message={kycEncryptedMessage}
 
                     message.KycRequired = true;
                     message.KycLink = kycLink;

@@ -22,5 +22,9 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
         public int TokenDecimals { get; set; }
 
         public decimal MinInvestAmountUsd { get; set; }
+
+        public bool KycEnableRequestSending { get; set; }
+
+        public string KycLinkTemplate { get; set; }
     }
 }

@@ -1,6 +1,10 @@
-﻿using System;
+﻿using Moq;
+using Xunit;
+using System;
 using System.Threading.Tasks;
+using Common;
 using Common.Log;
+using Lykke.Ico.Core.Services;
 using Lykke.Ico.Core;
 using Lykke.Ico.Core.Queues;
 using Lykke.Ico.Core.Queues.Emails;
@@ -11,15 +15,11 @@ using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Job.IcoInvestment.Services;
 using Lykke.Service.IcoExRate.Client;
 using Lykke.Service.IcoExRate.Client.AutorestClient.Models;
-using Moq;
-using Xunit;
 using Lykke.Job.IcoInvestment.Core.Domain;
 using Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
-using Common;
-using Lykke.Ico.Core.Services;
 
 namespace Lykke.Job.IcoInvestment.Tests
 {
