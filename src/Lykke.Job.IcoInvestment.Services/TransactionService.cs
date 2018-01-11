@@ -85,6 +85,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
                 await UpdateCampaignAmounts(transaction);
                 await UpdateInvestorAmounts(transaction);
+                await UpdateLatestTransactions(transaction);
                 await SendConfirmationEmail(transaction, msg.Link, settings);
             }
         }
@@ -291,7 +292,7 @@ namespace Lykke.Job.IcoInvestment.Services
 
                     var kycMessage = new { campaign="", email = tx.Email, kycid = kycId };
                     var kycEncryptedMessage = _urlEncryptionService.Encrypt(kycMessage.ToJson());
-                    var kycLink = settings.KycLinkTemplate.Replace("{kycEncryptedMessage}", kycEncryptedMessage); //https://cbfs-ico-service.com/#/register?message={kycEncryptedMessage}
+                    var kycLink = settings.KycLinkTemplate.Replace("{kycEncryptedMessage}", kycEncryptedMessage);
 
                     message.KycRequired = true;
                     message.KycLink = kycLink;
@@ -354,6 +355,20 @@ namespace Lykke.Job.IcoInvestment.Services
             {
                 await _log.WriteErrorAsync(nameof(UpdateInvestorAmounts),
                     $"Tx: {tx.ToJson()}",
+                    ex);
+            }
+        }
+
+        private async Task UpdateLatestTransactions(InvestorTransaction tx)
+        {
+            try
+            {
+                await _campaignInfoRepository.SaveLatestTransactionsAsync(tx.Email, tx.UniqueId);
+            }
+            catch (Exception ex)
+            {
+                await _log.WriteErrorAsync(nameof(UpdateLatestTransactions),
+                    $"email: {tx.Email}, uniqueId: {tx.UniqueId}",
                     ex);
             }
         }
