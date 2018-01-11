@@ -20,7 +20,6 @@ using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Job.IcoInvestment.Core.Domain;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
-using Lykke.Ico.Core.Helpers;
 using Lykke.Ico.Core.Services;
 
 namespace Lykke.Job.IcoInvestment.Services
@@ -36,7 +35,7 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IInvestorRefundRepository _investorRefundRepository;
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
-        private readonly IUrlEncryptionService _urlEncryptionService;
+        private readonly IKycService _kycService;
 
         public TransactionService(
             ILog log,
@@ -48,7 +47,7 @@ namespace Lykke.Job.IcoInvestment.Services
             IInvestorRefundRepository investorRefundRepository,
             IInvestorRepository investorRepository,
             IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender,
-            IUrlEncryptionService urlEncryptionService)
+            IKycService kycService)
         {
             _log = log;
             _exRateClient = exRateClient;
@@ -59,7 +58,7 @@ namespace Lykke.Job.IcoInvestment.Services
             _investorRefundRepository = investorRefundRepository;
             _investorRepository = investorRepository;
             _investmentMailSender = investmentMailSender;
-            _urlEncryptionService = urlEncryptionService;
+            _kycService = kycService;
         }
 
         public async Task Process(TransactionMessage msg)
@@ -289,10 +288,7 @@ namespace Lykke.Job.IcoInvestment.Services
                     investor.AmountUsd >= settings.MinInvestAmountUsd)
                 {
                     var kycId = await SaveInvestorKyc(investor.Email);
-
-                    var kycMessage = new { campaign="", email = tx.Email, kycid = kycId };
-                    var kycEncryptedMessage = _urlEncryptionService.Encrypt(kycMessage.ToJson());
-                    var kycLink = settings.KycLinkTemplate.Replace("{kycEncryptedMessage}", kycEncryptedMessage);
+                    var kycLink = await _kycService.GetKycLink(tx.Email, kycId);
 
                     message.KycRequired = true;
                     message.KycLink = kycLink;

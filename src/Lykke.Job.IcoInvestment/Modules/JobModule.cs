@@ -94,6 +94,10 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .WithParameter("iv", _settings.KycServiceEncriptionIv)
                 .SingleInstance();
 
+            builder.RegisterType<KycService>()
+                .As<IKycService>()
+                .SingleInstance();
+
             RegisterAzureQueueHandlers(builder);
         }
 

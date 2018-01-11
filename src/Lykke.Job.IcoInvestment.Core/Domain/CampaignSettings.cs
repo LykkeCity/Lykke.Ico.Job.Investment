@@ -25,6 +25,8 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
 
         public bool KycEnableRequestSending { get; set; }
 
+        public string KycCampaignId { get; set; }
+
         public string KycLinkTemplate { get; set; }
     }
 }

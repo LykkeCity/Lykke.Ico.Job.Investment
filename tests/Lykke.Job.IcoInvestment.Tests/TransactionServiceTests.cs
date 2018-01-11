@@ -38,6 +38,7 @@ namespace Lykke.Job.IcoInvestment.Tests
         private IInvestor _investor;
         private IInvestorTransaction _investorTransaction;
         private IUrlEncryptionService _urlEncryptionService;
+        private IKycService _kycService;
         private decimal _usdAmount = decimal.Zero;
 
         private TransactionService Init(string investorEmail = "test@test.test", double exchangeRate = 1.0)
@@ -123,6 +124,7 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Returns(() => Task.CompletedTask);
 
             _urlEncryptionService = new UrlEncryptionService("E546C8DF278CD5931069B522E695D4F2", "1234567890123456");
+            _kycService = new KycService(_campaignSettingsRepository.Object, _urlEncryptionService);
 
             return new TransactionService(
                 _log,
@@ -134,7 +136,7 @@ namespace Lykke.Job.IcoInvestment.Tests
                 _investorRefundRepository.Object,
                 _investorRepository.Object,
                 _investmentMailSender.Object,
-                _urlEncryptionService);
+                _kycService);
         }
 
         [Fact]
