@@ -30,7 +30,7 @@
     <!-- #if rabbitpub || rabbitsub -->
     <PackageReference Include="Lykke.RabbitMqBroker" Version="4.3.0" />
     <!-- #endif -->
-    <PackageReference Include="Lykke.SettingsReader" Version="1.1.3" />
+    <PackageReference Include="Lykke.SettingsReader" Version="1.1.4" />
     <PackageReference Include="Lykke.SlackNotification.AzureQueue" Version="2.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.Diagnostics" Version="2.0.1" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc" Version="2.0.1" />

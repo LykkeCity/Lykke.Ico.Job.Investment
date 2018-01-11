@@ -51,6 +51,10 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Callback((CampaignInfoType t, decimal v) => _usdAmount += v)
                 .Returns(() => Task.CompletedTask);
 
+            _campaignInfoRepository
+                .Setup(m => m.SaveLatestTransactionsAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .Returns(() => Task.CompletedTask);
+
             _campaignSettings = new CampaignSettings
             {
                 PreSaleStartDateTimeUtc = DateTime.UtcNow.AddDays(-15),
