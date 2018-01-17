@@ -81,7 +81,7 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Setup(m => m.GetAverageRate(It.IsAny<Pair>(), It.IsAny<DateTime>()))
                 .Returns(() => Task.FromResult(new AverageRateResponse { AverageRate = exchangeRate }));
 
-            _investor = new Investor() { Email = investorEmail };         
+            _investor = new Investor() { Email = investorEmail, ConfirmationToken = Guid.NewGuid() };         
 
             _investorRepository = new Mock<IInvestorRepository>();
 
@@ -136,7 +136,8 @@ namespace Lykke.Job.IcoInvestment.Tests
                 _investorRefundRepository.Object,
                 _investorRepository.Object,
                 _investmentMailSender.Object,
-                _kycService);
+                _kycService,
+                "http://test-ito.valid.global/summary/{token}/overview");
         }
 
         [Fact]

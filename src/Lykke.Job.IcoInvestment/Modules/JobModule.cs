@@ -86,6 +86,7 @@ namespace Lykke.Job.IcoInvestment.Modules
 
             builder.RegisterType<TransactionService>()
                 .As<ITransactionService>()
+                .WithParameter("siteSummaryPageUrl", _settings.SiteSummaryPageUrl)
                 .SingleInstance();
 
             builder.RegisterType<UrlEncryptionService>()

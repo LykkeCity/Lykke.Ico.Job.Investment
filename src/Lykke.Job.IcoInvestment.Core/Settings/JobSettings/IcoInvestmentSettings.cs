@@ -11,5 +11,6 @@ namespace Lykke.Job.IcoInvestment.Core.Settings.JobSettings
         public String KycServiceCampaignId { get; set; }
         public String KycServiceEncriptionKey { get; set; }
         public String KycServiceEncriptionIv { get; set; }
+        public String SiteSummaryPageUrl { get; set; }
     }
 }

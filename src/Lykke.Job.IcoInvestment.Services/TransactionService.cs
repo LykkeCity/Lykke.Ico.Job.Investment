@@ -21,6 +21,7 @@ using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Job.IcoInvestment.Core.Domain;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
 using Lykke.Ico.Core.Services;
+using Lykke.Job.IcoInvestment.Core.Helpers;
 
 namespace Lykke.Job.IcoInvestment.Services
 {
@@ -36,6 +37,7 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
         private readonly IKycService _kycService;
+        private readonly string _siteSummaryPageUrl;
 
         public TransactionService(
             ILog log,
@@ -47,7 +49,8 @@ namespace Lykke.Job.IcoInvestment.Services
             IInvestorRefundRepository investorRefundRepository,
             IInvestorRepository investorRepository,
             IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender,
-            IKycService kycService)
+            IKycService kycService,
+            string siteSummaryPageUrl)
         {
             _log = log;
             _exRateClient = exRateClient;
@@ -59,6 +62,7 @@ namespace Lykke.Job.IcoInvestment.Services
             _investorRepository = investorRepository;
             _investmentMailSender = investmentMailSender;
             _kycService = kycService;
+            _siteSummaryPageUrl = siteSummaryPageUrl;
         }
 
         public async Task Process(TransactionMessage msg)
@@ -254,37 +258,25 @@ namespace Lykke.Job.IcoInvestment.Services
             try
             {
                 var investor = await _investorRepository.GetAsync(tx.Email);
-                var asset = "";
-
-                switch (tx.Currency)
-                {
-                    case CurrencyType.Bitcoin:
-                        asset = "BTC";
-                        break;
-                    case CurrencyType.Ether:
-                        asset = "ETH";
-                        break;
-                    case CurrencyType.Fiat:
-                        asset = "USD";
-                        break;
-                }
 
                 var message = new InvestorNewTransactionMessage
                 {
                     EmailTo = tx.Email,
-                    Payment = $"{tx.Amount + tx.Fee} {asset}",
-                    TransactionLink = link
+                    InvestedAmountUsd = investor.AmountUsd,
+                    InvestedAmountToken = investor.AmountToken,
+                    TransactionAmount = tx.Amount,
+                    TransactionAmountUsd = tx.AmountUsd,
+                    TransactionAmountToken = tx.AmountToken,
+                    TransactionFee = tx.Fee,
+                    TransactionAsset = tx.Currency.ToAssetName(),
+                    LinkToSummaryPage = _siteSummaryPageUrl.Replace("token", investor.ConfirmationToken.Value.ToString()),
+                    LinkTransactionDetails = link,
+                    MinAmount = settings.MinInvestAmountUsd,
+                    MoreInvestmentRequired = investor.AmountUsd < settings.MinInvestAmountUsd
                 };
 
-                if (investor.AmountUsd < settings.MinInvestAmountUsd)
-                {
-                    message.MoreInvestmentRequired = true;
-                    message.InvestedAmount = DecimalExtensions.RoundDown(investor.AmountUsd, 2);
-                    message.MinAmount = settings.MinInvestAmountUsd;
-                }
-
                 if (settings.KycEnableRequestSending &&
-                    investor.KycRequestedUtc == null && 
+                    investor.KycRequestedUtc == null &&
                     investor.AmountUsd >= settings.MinInvestAmountUsd)
                 {
                     var kycId = await SaveInvestorKyc(investor.Email);

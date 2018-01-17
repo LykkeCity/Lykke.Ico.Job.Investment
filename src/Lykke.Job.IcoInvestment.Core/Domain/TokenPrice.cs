@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Ico.Core;
+using Lykke.Job.IcoInvestment.Core.Helpers;
 
 namespace Lykke.Job.IcoInvestment.Core.Domain
 {
@@ -29,7 +30,7 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
 
             var priceList = new List<TokenPrice>();
             var tokenPhase = Enum.GetName(typeof(TokenPricePhase), tokenInfo.Phase);
-            var tokens = DecimalExtensions.RoundDown(amountUsd / tokenInfo.Price, campaignSettings.TokenDecimals);
+            var tokens = (amountUsd / tokenInfo.Price).RoundDown(campaignSettings.TokenDecimals);
 
             if (tokenInfo.Phase == TokenPricePhase.CrowdSaleInitial)
             {
@@ -44,7 +45,7 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
                         // tokens above threshold
                         var amountUsdAbove = amountUsd - (tokensBelow * tokenInfo.Price);
                         var priceAbove = campaignSettings.GetTokenPrice(TokenPricePhase.CrowdSaleFirstDay);
-                        var tokensAbove = DecimalExtensions.RoundDown(amountUsdAbove / priceAbove, campaignSettings.TokenDecimals);
+                        var tokensAbove = (amountUsdAbove / priceAbove).RoundDown(campaignSettings.TokenDecimals);
 
                         priceList.Add(new TokenPrice(tokensAbove, priceAbove, nameof(TokenPricePhase.CrowdSaleFirstDay)));
 
