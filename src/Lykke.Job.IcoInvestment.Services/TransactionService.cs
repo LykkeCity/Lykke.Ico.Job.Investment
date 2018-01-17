@@ -269,7 +269,7 @@ namespace Lykke.Job.IcoInvestment.Services
                     TransactionAmountToken = tx.AmountToken.RoundDown(4),
                     TransactionFee = tx.Fee,
                     TransactionAsset = tx.Currency.ToAssetName(),
-                    LinkToSummaryPage = _siteSummaryPageUrl.Replace("token", investor.ConfirmationToken.Value.ToString()),
+                    LinkToSummaryPage = _siteSummaryPageUrl.Replace("{token}", investor.ConfirmationToken.Value.ToString()),
                     LinkTransactionDetails = link,
                     MinAmount = settings.MinInvestAmountUsd,
                     MoreInvestmentRequired = investor.AmountUsd < settings.MinInvestAmountUsd
