@@ -262,11 +262,11 @@ namespace Lykke.Job.IcoInvestment.Services
                 var message = new InvestorNewTransactionMessage
                 {
                     EmailTo = tx.Email,
-                    InvestedAmountUsd = investor.AmountUsd,
-                    InvestedAmountToken = investor.AmountToken,
+                    InvestedAmountUsd = investor.AmountUsd.RoundDown(2),
+                    InvestedAmountToken = investor.AmountToken.RoundDown(4),
                     TransactionAmount = tx.Amount,
-                    TransactionAmountUsd = tx.AmountUsd,
-                    TransactionAmountToken = tx.AmountToken,
+                    TransactionAmountUsd = tx.AmountUsd.RoundDown(2),
+                    TransactionAmountToken = tx.AmountToken.RoundDown(4),
                     TransactionFee = tx.Fee,
                     TransactionAsset = tx.Currency.ToAssetName(),
                     LinkToSummaryPage = _siteSummaryPageUrl.Replace("token", investor.ConfirmationToken.Value.ToString()),
