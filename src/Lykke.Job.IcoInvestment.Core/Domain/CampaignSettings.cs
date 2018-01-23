@@ -28,5 +28,7 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
         public string KycCampaignId { get; set; }
 
         public string KycLinkTemplate { get; set; }
+
+        public bool CaptchaEnable { get; set; }
     }
 }
