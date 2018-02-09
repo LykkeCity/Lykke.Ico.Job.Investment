@@ -372,6 +372,7 @@ namespace Lykke.Job.IcoInvestment.Services
                     $"Save KYC request info");
 
                 await _investorRepository.SaveKycAsync(email, kycRequestId);
+                await _investorAttributeRepository.SaveAsync(InvestorAttributeType.KycId, email, kycRequestId);
 
                 return kycRequestId;
             }

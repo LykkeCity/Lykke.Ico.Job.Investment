@@ -99,16 +99,11 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<IKycService>()
                 .SingleInstance();
 
-            RegisterAzureQueueHandlers(builder);
-        }
-
-        private void RegisterAzureQueueHandlers(ContainerBuilder builder)
-        {
             builder.AddTriggers(
                 pool =>
                 {
-                    pool.AddDefaultConnection(_settings.AzureQueue.ConnectionString);
+                    pool.AddDefaultConnection(_azureQueueSettingsManager.ConnectionString(x => x.ConnectionString));
                 });
-        }
+        }        
     }
 }
