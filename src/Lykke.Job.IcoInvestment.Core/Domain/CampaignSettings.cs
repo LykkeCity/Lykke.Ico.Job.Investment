@@ -23,6 +23,8 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
 
         public decimal MinInvestAmountUsd { get; set; }
 
+        public decimal HardCapUsd { get; set; }
+
         public bool KycEnableRequestSending { get; set; }
 
         public string KycCampaignId { get; set; }

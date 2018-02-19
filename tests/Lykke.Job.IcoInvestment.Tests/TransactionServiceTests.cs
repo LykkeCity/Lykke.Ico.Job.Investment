@@ -66,7 +66,8 @@ namespace Lykke.Job.IcoInvestment.Tests
                 CrowdSaleTotalTokensAmount = 360000000,
                 TokenDecimals = 4,
                 MinInvestAmountUsd = 1000,
-                TokenBasePriceUsd = 0.064M
+                TokenBasePriceUsd = 0.064M,
+                HardCapUsd = 1000000
             };
 
             _campaignSettingsRepository = new Mock<ICampaignSettingsRepository>();
@@ -333,7 +334,7 @@ namespace Lykke.Job.IcoInvestment.Tests
         }
 
         [Fact]
-        public async void ShouldThrowExceptionWhenWhenAllPresalesTokensSoldOut()
+        public async void ShouldThrowExceptionWhenAllPresalesTokensSoldOut()
         {
             // Arrange
             var message = new TransactionMessage
@@ -362,7 +363,7 @@ namespace Lykke.Job.IcoInvestment.Tests
         }
 
         [Fact]
-        public async void ShouldThrowExceptionWhenWhenAllTokensSoldOut()
+        public async void ShouldThrowExceptionWhenAllTokensSoldOut()
         {
             // Arrange
             var message = new TransactionMessage
@@ -386,6 +387,34 @@ namespace Lykke.Job.IcoInvestment.Tests
             _investorRefundRepository.Verify(m => m.SaveAsync(
                 It.Is<string>(v => v == message.Email),
                 It.Is<InvestorRefundReason>(v => v == InvestorRefundReason.TokensSoldOut),
+                It.Is<string>(v => v == messageJson)));
+        }
+
+        [Fact]
+        public async void ShouldThrowExceptionWhenHardCapUsdExceeded()
+        {
+            // Arrange
+            var message = new TransactionMessage
+            {
+                Email = "test@test.test",
+                CreatedUtc = DateTime.Now.AddDays(10).ToUniversalTime(),
+                UniqueId = "111"
+            };
+
+            var messageJson = message.ToJson();
+
+            var svc = Init(message.Email, Decimal.ToDouble(1M));
+
+            _campaignInfoRepository
+                .Setup(m => m.GetValueAsync(It.Is<CampaignInfoType>(t => t == CampaignInfoType.AmountInvestedUsd)))
+                .Returns(() => Task.FromResult("1000001"));
+
+            await svc.Process(message);
+
+            // Assert
+            _investorRefundRepository.Verify(m => m.SaveAsync(
+                It.Is<string>(v => v == message.Email),
+                It.Is<InvestorRefundReason>(v => v == InvestorRefundReason.HardCapUsdExceeded),
                 It.Is<string>(v => v == messageJson)));
         }
     }

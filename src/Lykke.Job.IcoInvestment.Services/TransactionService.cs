@@ -149,10 +149,22 @@ namespace Lykke.Job.IcoInvestment.Services
             return soldTokensAmount;
         }
 
+        private async Task<decimal> GetInvestedUsdAmount()
+        {
+            var amountInvestedUsdStr = await _campaignInfoRepository.GetValueAsync(CampaignInfoType.AmountInvestedUsd);
+            if (!Decimal.TryParse(amountInvestedUsdStr, out var amountInvestedUsd))
+            {
+                amountInvestedUsd = 0;
+            }
+
+            return amountInvestedUsd;
+        }
+
         private async Task<bool> IsTxValid(TransactionMessage msg, ICampaignSettings settings, decimal soldTokensAmount)
         {
             var preSalePhase = settings.IsPreSale(msg.CreatedUtc);
             var crowdSalePhase = settings.IsCrowdSale(msg.CreatedUtc);
+            var amountInvestedUsd = await GetInvestedUsdAmount();
 
             if (!preSalePhase && !crowdSalePhase)
             {
@@ -187,6 +199,19 @@ namespace Lykke.Job.IcoInvestment.Services
 
                 await _investorRefundRepository.SaveAsync(msg.Email,
                     InvestorRefundReason.TokensSoldOut,
+                    msg.ToJson());
+
+                return false;
+            }
+            if (crowdSalePhase && amountInvestedUsd > settings.HardCapUsd)
+            {
+                await _log.WriteInfoAsync(nameof(Process),
+                    $"amountInvestedUsd: {amountInvestedUsd}, hardCapUsd: {settings.HardCapUsd}, " +
+                    $"settings: {settings.ToJson()}, msg: {msg.ToJson()}",
+                    $"HardCapUsd was exceeded");
+
+                await _investorRefundRepository.SaveAsync(msg.Email,
+                    InvestorRefundReason.HardCapUsdExceeded,
                     msg.ToJson());
 
                 return false;

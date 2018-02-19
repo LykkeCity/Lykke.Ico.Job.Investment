@@ -37,6 +37,8 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
 
         public DateTime? KycPassedUtc { get; set; }
 
+        public DateTime? KycManuallyUpdatedUtc { get; set; }
+
         public decimal AmountBtc { get; set; }
 
         public decimal AmountEth { get; set; }
