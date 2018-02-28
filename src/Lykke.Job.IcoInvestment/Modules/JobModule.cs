@@ -9,6 +9,7 @@ using Lykke.Ico.Core.Repositories.Investor;
 using Lykke.Ico.Core.Repositories.InvestorAttribute;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
+using Lykke.Ico.Core.Repositories.PrivateInvestorAttribute;
 using Lykke.Ico.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Services;
 using Lykke.Job.IcoInvestment.Core.Settings.JobSettings;
@@ -64,6 +65,10 @@ namespace Lykke.Job.IcoInvestment.Modules
                 .As<IInvestorAttributeRepository>()
                 .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
 
+            builder.RegisterType<PrivateInvestorAttributeRepository>()
+                .As<IPrivateInvestorAttributeRepository>()
+                .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
+
             builder.RegisterType<CampaignInfoRepository>()
                 .As<ICampaignInfoRepository>()
                 .WithParameter(TypedParameter.From(_dbSettingsManager.Nested(x => x.DataConnString)));
@@ -97,6 +102,10 @@ namespace Lykke.Job.IcoInvestment.Modules
 
             builder.RegisterType<KycService>()
                 .As<IKycService>()
+                .SingleInstance();
+
+            builder.RegisterType<ReferralCodeService>()
+                .As<IReferralCodeService>()
                 .SingleInstance();
 
             builder.AddTriggers(

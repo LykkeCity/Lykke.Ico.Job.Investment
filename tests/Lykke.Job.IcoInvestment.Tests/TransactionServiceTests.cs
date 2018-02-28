@@ -20,6 +20,7 @@ using Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments;
 using Lykke.Ico.Core.Repositories.InvestorTransaction;
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Ico.Core.Repositories.InvestorRefund;
+using Lykke.Ico.Core.Repositories.PrivateInvestorAttribute;
 
 namespace Lykke.Job.IcoInvestment.Tests
 {
@@ -28,6 +29,7 @@ namespace Lykke.Job.IcoInvestment.Tests
         private ILog _log;
         private Mock<IIcoExRateClient> _exRateClient;
         private Mock<IInvestorAttributeRepository> _investorAttributeRepository;
+        private Mock<IPrivateInvestorAttributeRepository> _privateInvestorAttributeRepository;
         private Mock<ICampaignInfoRepository> _campaignInfoRepository;
         private Mock<ICampaignSettingsRepository> _campaignSettingsRepository;
         private Mock<IInvestorTransactionRepository> _investorTransactionRepository;
@@ -39,6 +41,7 @@ namespace Lykke.Job.IcoInvestment.Tests
         private IInvestorTransaction _investorTransaction;
         private IUrlEncryptionService _urlEncryptionService;
         private IKycService _kycService;
+        private IReferralCodeService _referralCodeService;
         private decimal _usdAmount = decimal.Zero;
 
         private TransactionService Init(string investorEmail = "test@test.test", double exchangeRate = 1.0)
@@ -67,7 +70,9 @@ namespace Lykke.Job.IcoInvestment.Tests
                 TokenDecimals = 4,
                 MinInvestAmountUsd = 1000,
                 TokenBasePriceUsd = 0.064M,
-                HardCapUsd = 1000000
+                HardCapUsd = 1000000,
+                EnableReferralProgram = true,
+                ReferralCodeLength = 6
             };
 
             _campaignSettingsRepository = new Mock<ICampaignSettingsRepository>();
@@ -82,7 +87,12 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Setup(m => m.GetAverageRate(It.IsAny<Pair>(), It.IsAny<DateTime>()))
                 .Returns(() => Task.FromResult(new AverageRateResponse { AverageRate = exchangeRate }));
 
-            _investor = new Investor() { Email = investorEmail, ConfirmationToken = Guid.NewGuid() };         
+            _investor = new Investor()
+            {
+                Email = investorEmail,
+                ConfirmationToken = Guid.NewGuid(),
+                AmountUsd = _campaignSettings.MinInvestAmountUsd + 10
+            };         
 
             _investorRepository = new Mock<IInvestorRepository>();
 
@@ -90,13 +100,35 @@ namespace Lykke.Job.IcoInvestment.Tests
                 .Setup(m => m.GetAsync(It.Is<string>(v => !string.IsNullOrWhiteSpace(v) && v == investorEmail)))
                 .Returns(() => Task.FromResult(_investor));
 
+            _investorRepository
+                .Setup(m => m.SaveReferralCode(It.IsAny<string>(), It.IsAny<string>()))
+                .Returns(() => Task.CompletedTask);
+
             _investorAttributeRepository = new Mock<IInvestorAttributeRepository>();
+
+            _investorAttributeRepository
+                .Setup(m => m.SaveAsync(It.IsAny<InvestorAttributeType>(), It.IsAny<string>(), It.IsAny<string>()))
+                .Returns(() => Task.CompletedTask);
 
             _investorAttributeRepository
                 .Setup(m => m.GetInvestorEmailAsync(
                     It.IsIn(new InvestorAttributeType[] { InvestorAttributeType.PayInBtcAddress, InvestorAttributeType.PayInEthAddress }), 
                     It.IsAny<string>()))
                 .Returns(() => Task.FromResult(investorEmail));
+
+            _investorAttributeRepository
+                .Setup(m => m.GetInvestorEmailAsync(
+                    It.IsIn(new InvestorAttributeType[] { InvestorAttributeType.ReferralCode }),
+                    It.IsAny<string>()))
+                .Returns(() => Task.FromResult(""));
+
+            _privateInvestorAttributeRepository = new Mock<IPrivateInvestorAttributeRepository>();
+
+            _privateInvestorAttributeRepository
+                .Setup(m => m.GetInvestorEmailAsync(
+                    It.IsIn(new PrivateInvestorAttributeType[] { PrivateInvestorAttributeType.ReferralCode }),
+                    It.IsAny<string>()))
+                .Returns(() => Task.FromResult(""));
 
             _investorTransaction = new InvestorTransaction { };
 
@@ -127,6 +159,9 @@ namespace Lykke.Job.IcoInvestment.Tests
             _urlEncryptionService = new UrlEncryptionService("E546C8DF278CD5931069B522E695D4F2", "1234567890123456");
             _kycService = new KycService(_campaignSettingsRepository.Object, _urlEncryptionService);
 
+            _referralCodeService = new ReferralCodeService(_investorAttributeRepository.Object,
+                _privateInvestorAttributeRepository.Object);
+
             return new TransactionService(
                 _log,
                 _exRateClient.Object,
@@ -138,6 +173,7 @@ namespace Lykke.Job.IcoInvestment.Tests
                 _investorRepository.Object,
                 _investmentMailSender.Object,
                 _kycService,
+                _referralCodeService,
                 "http://test-ito.valid.global/summary/{token}/overview");
         }
 
@@ -184,6 +220,12 @@ namespace Lykke.Job.IcoInvestment.Tests
             _campaignInfoRepository.Verify(m => m.IncrementValue(
                 It.Is<CampaignInfoType>(v => v == CampaignInfoType.AmountInvestedUsd),
                 It.Is<decimal>(v => v == testAmountUsd)));
+
+            _investorRepository.Verify(m => m.SaveReferralCode(It.IsAny<string>(), It.IsAny<string>()));
+            _investorAttributeRepository.Verify(m => m.SaveAsync(
+                It.Is<InvestorAttributeType>(f => f == InvestorAttributeType.ReferralCode), 
+                It.IsAny<string>(), 
+                It.IsAny<string>()));
 
             Assert.Equal(testAmountUsd, _usdAmount);
         }

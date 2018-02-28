@@ -37,6 +37,7 @@ namespace Lykke.Job.IcoInvestment.Services
         private readonly IInvestorRepository _investorRepository;
         private readonly IQueuePublisher<InvestorNewTransactionMessage> _investmentMailSender;
         private readonly IKycService _kycService;
+        private readonly IReferralCodeService _referralCodeService;
         private readonly string _siteSummaryPageUrl;
 
         public TransactionService(
@@ -50,6 +51,7 @@ namespace Lykke.Job.IcoInvestment.Services
             IInvestorRepository investorRepository,
             IQueuePublisher<InvestorNewTransactionMessage> investmentMailSender,
             IKycService kycService,
+            IReferralCodeService referralCodeService,
             string siteSummaryPageUrl)
         {
             _log = log;
@@ -62,6 +64,7 @@ namespace Lykke.Job.IcoInvestment.Services
             _investorRepository = investorRepository;
             _investmentMailSender = investmentMailSender;
             _kycService = kycService;
+            _referralCodeService = referralCodeService;
             _siteSummaryPageUrl = siteSummaryPageUrl;
         }
 
@@ -89,6 +92,7 @@ namespace Lykke.Job.IcoInvestment.Services
                 await UpdateCampaignAmounts(transaction);
                 await UpdateInvestorAmounts(transaction);
                 await UpdateLatestTransactions(transaction);
+                await UpdateInvestorReferralCode(transaction, settings);
                 await SendConfirmationEmail(transaction, msg.Link, settings);
             }
         }
@@ -276,6 +280,40 @@ namespace Lykke.Job.IcoInvestment.Services
             }
 
             return exchangeRate;
+        }
+
+        private async Task UpdateInvestorReferralCode(InvestorTransaction tx, ICampaignSettings settings)
+        {
+            try
+            {
+                if (settings.EnableReferralProgram)
+                {
+                    var investor = await _investorRepository.GetAsync(tx.Email);
+                    if (string.IsNullOrEmpty(investor.ReferralCode) && investor.AmountUsd >= settings.MinInvestAmountUsd)
+                    {
+                        if (!settings.ReferralCodeLength.HasValue)
+                        {
+                            throw new Exception("settings.ReferralCodeLength does not have value");
+                        }
+
+                        var code = await _referralCodeService.GetReferralCode(settings.ReferralCodeLength.Value);
+
+                        await _investorRepository.SaveReferralCode(investor.Email, code);
+                        await _investorAttributeRepository.SaveAsync(InvestorAttributeType.ReferralCode,
+                            investor.Email, code);
+
+                        await _log.WriteInfoAsync(nameof(UpdateInvestorReferralCode),
+                            $"email: {investor.Email}, code: {code}",
+                            $"Update investor referral code");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                await _log.WriteErrorAsync(nameof(UpdateInvestorReferralCode),
+                    $"Tx: {tx.ToJson()}, settings: {settings.ToJson()}",
+                    ex);
+            }
         }
 
         private async Task SendConfirmationEmail(InvestorTransaction tx, string link, ICampaignSettings settings)

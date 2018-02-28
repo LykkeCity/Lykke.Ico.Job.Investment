@@ -34,5 +34,15 @@ namespace Lykke.Job.IcoInvestment.Core.Domain
         public bool CaptchaEnable { get; set; }
 
         public bool EnableCampaignFrontEnd { get; set; }
+
+        public bool EnableReferralProgram { get; set; }
+
+        public int? ReferralCodeLength { get; set; }
+
+        public decimal? ReferralOwnerDiscount { get; set; }
+
+        public decimal? ReferralDiscount { get; set; }
+
+        public DateTime UpdatedUtc { get; set; }
     }
 }

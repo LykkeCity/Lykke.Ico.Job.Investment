@@ -8,6 +8,7 @@ namespace Lykke.Job.IcoInvestment.Core.Domain.CryptoInvestments
     {
         public string Email { get; set; }
         public string UniqueId { get; set; }
+        public DateTime ProcessedUtc { get; set; }
         public DateTime CreatedUtc { get; set; }
         public CurrencyType Currency { get; set; }
         public string BlockId { get; set; }
