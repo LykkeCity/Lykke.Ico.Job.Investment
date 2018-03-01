@@ -2,12 +2,13 @@
 using Lykke.Ico.Core.Repositories.CampaignSettings;
 using Lykke.Job.IcoInvestment.Core.Domain;
 using Xunit;
+using Lykke.Ico.Core.Repositories.Investor;
 
 namespace Lykke.Job.IcoInvestment.Tests
 {
     public class TokenPriceTests
     {
-        ICampaignSettings _campaignSettings = new CampaignSettings()
+        CampaignSettings _campaignSettings = new CampaignSettings()
         {
             PreSaleStartDateTimeUtc = DateTime.Today.ToUniversalTime().AddDays(-15),
             PreSaleEndDateTimeUtc = DateTime.Today.ToUniversalTime(),
@@ -15,6 +16,12 @@ namespace Lykke.Job.IcoInvestment.Tests
             CrowdSaleEndDateTimeUtc = DateTime.Today.ToUniversalTime().AddDays(21),
             TokenDecimals = 4,
             TokenBasePriceUsd = 1M
+        };
+
+        Investor _investor = new Investor()
+        {
+            ReferralCodeApplied = "TTT",
+            ReferralsNumber = 0
         };
 
         [Fact]
@@ -26,7 +33,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.AddDays(-20).ToUniversalTime();
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
             // Assert
             Assert.Null(priceList);
@@ -42,7 +49,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.AddDays(-10).ToUniversalTime();
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
             // Assert
             Assert.Single(priceList);
@@ -60,7 +67,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.ToUniversalTime();
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
             // Assert
             Assert.Single(priceList);
@@ -79,7 +86,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.ToUniversalTime();
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
             // Assert
             Assert.Equal(2, priceList.Count);
@@ -99,7 +106,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.ToUniversalTime();
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
             // Assert
             Assert.Single(priceList);
@@ -117,7 +124,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.ToUniversalTime().AddDays(1);
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
             // Assert
             Assert.Single(priceList);
@@ -135,7 +142,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.ToUniversalTime().AddDays(7);
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
 
             // Assert
@@ -154,7 +161,7 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.ToUniversalTime().AddDays(14);
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
 
             // Assert
@@ -172,12 +179,60 @@ namespace Lykke.Job.IcoInvestment.Tests
             var txDateTimeUtc = DateTime.Now.ToUniversalTime();
 
             // Act
-            var priceList = TokenPrice.GetPriceList(_campaignSettings, txDateTimeUtc, amountUsd, currentTotal);
+            var priceList = TokenPrice.GetPriceList(_campaignSettings, _investor, txDateTimeUtc, amountUsd, currentTotal);
 
             // Assert
             Assert.Single(priceList);
             Assert.Equal(0M, priceList[0].Count);
             Assert.Equal(0.75M, priceList[0].Price);
+        }
+
+        [Fact]
+        public void ShouldUseRefferalDiscount()
+        {
+            // Arrange
+            var currentTotal = 20_000_000M;
+            var amountUsd = 1M;
+            var txDateTimeUtc = DateTime.Now.ToUniversalTime().AddDays(7);
+
+            var settings = _campaignSettings.Clone();
+            settings.EnableReferralProgram = true;
+            settings.ReferralDiscount = 15;
+
+            // Act
+            var priceList = TokenPrice.GetPriceList(settings, _investor, txDateTimeUtc, amountUsd, currentTotal);
+
+            // Assert
+            Assert.Single(priceList);
+            Assert.Equal("ReferralDiscount", priceList[0].Phase);
+            Assert.Equal(0.8500M, priceList[0].Price);
+            Assert.Equal(1.1764M, priceList[0].Count);
+        }
+
+        [Fact]
+        public void ShouldUseRefferalOwnerDiscount()
+        {
+            // Arrange
+            var currentTotal = 20_000_000M;
+            var amountUsd = 1M;
+            var txDateTimeUtc = DateTime.Now.ToUniversalTime().AddDays(14);
+
+            var settings = _campaignSettings.Clone();
+            settings.EnableReferralProgram = true;
+            settings.ReferralOwnerDiscount = 15;
+
+            var investor = _investor.Clone();
+            investor.ReferralsNumber = 1;
+            investor.ReferralCodeApplied = "";
+
+            // Act
+            var priceList = TokenPrice.GetPriceList(settings, investor, txDateTimeUtc, amountUsd, currentTotal);
+
+            // Assert
+            Assert.Single(priceList);
+            Assert.Equal("ReferralOwnerDiscount", priceList[0].Phase);
+            Assert.Equal(0.8500M, priceList[0].Price);
+            Assert.Equal(1.1764M, priceList[0].Count);
         }
     }
 }

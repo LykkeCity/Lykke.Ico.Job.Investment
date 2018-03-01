@@ -227,10 +227,12 @@ namespace Lykke.Job.IcoInvestment.Services
         private async Task<InvestorTransaction> SaveTransaction(TransactionMessage msg, 
             ICampaignSettings settings, decimal soldTokensAmount)
         {
+            var investor = await _investorRepository.GetAsync(msg.Email);
             var exchangeRate = await GetExchangeRate(msg);
             var avgExchangeRate = Convert.ToDecimal(exchangeRate.AverageRate);
             var amountUsd = msg.Amount * avgExchangeRate;
-            var tokenPriceList = TokenPrice.GetPriceList(settings, msg.CreatedUtc, amountUsd, soldTokensAmount);
+            var tokenPriceList = TokenPrice.GetPriceList(settings, investor, msg.CreatedUtc, 
+                amountUsd, soldTokensAmount);
             var amountToken = tokenPriceList.Sum(p => p.Count);
             var tokenPrice = (amountUsd / amountToken).RoundDown(settings.TokenDecimals);
 

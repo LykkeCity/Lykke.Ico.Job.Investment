@@ -3,6 +3,7 @@ using System;
 
 namespace Lykke.Job.IcoInvestment.Core.Domain
 {
+    [Serializable]
     public class CampaignSettings : ICampaignSettings
     {
         public DateTime PreSaleStartDateTimeUtc { get; set; }

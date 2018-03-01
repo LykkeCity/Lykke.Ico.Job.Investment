@@ -3,6 +3,7 @@ using System;
 
 namespace Lykke.Job.IcoInvestment.Core.Domain
 {
+    [Serializable]
     public class Investor : IInvestor
     {
         public string Email { get; set; }
