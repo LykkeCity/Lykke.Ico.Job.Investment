@@ -234,7 +234,7 @@ namespace Lykke.Job.IcoInvestment.Services
             var tokenPriceList = TokenPrice.GetPriceList(settings, investor, msg.CreatedUtc, 
                 amountUsd, soldTokensAmount);
             var amountToken = tokenPriceList.Sum(p => p.Count);
-            var tokenPrice = (amountUsd / amountToken).RoundDown(settings.TokenDecimals);
+            var tokenPrice = tokenPriceList.Count == 1 ? tokenPriceList[0].Price : (amountUsd / amountToken);
 
             var tx = new InvestorTransaction
             {
