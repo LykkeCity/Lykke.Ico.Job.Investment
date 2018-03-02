@@ -314,11 +314,15 @@ namespace Lykke.Job.IcoInvestment.Services
                     if (!string.IsNullOrEmpty(investor.ReferralCodeApplied) && 
                         investor.AmountUsd >= settings.MinInvestAmountUsd)
                     {
-                        var referralEmail = await _investorAttributeRepository.GetInvestorEmailAsync(
+                        var referralOwnerEmail = await _investorAttributeRepository.GetInvestorEmailAsync(
                             InvestorAttributeType.ReferralCode, investor.ReferralCodeApplied);
-                        if (referralEmail != null)
+                        if (referralOwnerEmail != null)
                         {
-                            await _investorRepository.IncrementReferrals(referralEmail);
+                            await _investorRepository.IncrementReferrals(referralOwnerEmail);
+
+                            await _log.WriteInfoAsync(nameof(UpdateInvestorReferralCode),
+                                $"referralEmail: {referralOwnerEmail}",
+                                $"Increment referrals number");
                         }
                     }
                 }
